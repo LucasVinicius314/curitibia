@@ -8,6 +8,8 @@ class PlayerScript : MonoBehaviour
   Vector2 movementInput;
   Vector2 lookInput;
   CharacterController? controller;
+  Transform? cameraContainer;
+  float cameraContainerXRotation = 0f;
 
   public void Look(InputAction.CallbackContext context)
   {
@@ -22,11 +24,13 @@ class PlayerScript : MonoBehaviour
   void Awake()
   {
     controller = GetComponent<CharacterController>();
+    cameraContainer = transform.Find("CameraContainer");
   }
 
   void Start()
   {
-
+    Cursor.visible = false;
+    Cursor.lockState = CursorLockMode.Locked;
   }
 
   void Update()
@@ -38,6 +42,15 @@ class PlayerScript : MonoBehaviour
 
   void LateUpdate()
   {
-    transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * 5f);
+    const float sensitivity = 10f;
+
+    cameraContainerXRotation = Mathf.Clamp(cameraContainerXRotation - lookInput.y * Time.deltaTime * sensitivity, -90f, 90f);
+
+    if (cameraContainer != null)
+    {
+      cameraContainer.localRotation = Quaternion.Euler(Vector2.right * cameraContainerXRotation);
+    }
+
+    transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * sensitivity);
   }
 }
