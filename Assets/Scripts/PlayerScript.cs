@@ -8,8 +8,48 @@ class PlayerScript : MonoBehaviour
   Vector2 movementInput;
   Vector2 lookInput;
   CharacterController? controller;
+  Rigidbody? rb;
   Transform? cameraContainer;
   float cameraContainerXRotation = 0f;
+  bool isGrounded = false;
+
+  void DisablePhysics()
+  {
+    if (controller != null && rb != null)
+    {
+      isGrounded = true;
+      controller.enabled = true;
+      rb.isKinematic = true;
+    }
+  }
+
+  void EnablePhysics(bool jump)
+  {
+    if (controller != null && rb != null)
+    {
+      isGrounded = false;
+      controller.enabled = false;
+      rb.isKinematic = false;
+
+      if (jump)
+      {
+        rb.AddForce(new Vector3
+        {
+          x = controller.velocity.x,
+          y = 5f,
+          z = controller.velocity.z,
+        }, ForceMode.Impulse);
+      }
+    }
+  }
+
+  public void Jump(InputAction.CallbackContext context)
+  {
+    if (isGrounded)
+    {
+      EnablePhysics(true);
+    }
+  }
 
   public void Look(InputAction.CallbackContext context)
   {
@@ -21,8 +61,17 @@ class PlayerScript : MonoBehaviour
     movementInput = context.ReadValue<Vector2>();
   }
 
+  void OnCollisionEnter(Collision collision)
+  {
+    if (!isGrounded)
+    {
+      DisablePhysics();
+    }
+  }
+
   void Awake()
   {
+    rb = GetComponent<Rigidbody>();
     controller = GetComponent<CharacterController>();
     cameraContainer = transform.Find("CameraContainer");
   }
@@ -31,13 +80,24 @@ class PlayerScript : MonoBehaviour
   {
     Cursor.visible = false;
     Cursor.lockState = CursorLockMode.Locked;
+
+    EnablePhysics(false);
   }
 
   void Update()
   {
     var vector = transform.right * movementInput.x + transform.forward * movementInput.y;
 
-    controller?.SimpleMove(Vector3.ClampMagnitude(vector, 1f) * 3f);
+    if (controller != null)
+    {
+      // TODO: fix
+      // if (isGrounded && !controller.isGrounded)
+      // {
+      //   EnablePhysics(false);
+      // }
+
+      controller.SimpleMove(Vector3.ClampMagnitude(vector, 1f) * 3f);
+    }
   }
 
   void LateUpdate()
