@@ -31,11 +31,7 @@ class PlayerScript : MonoBehaviour
 
   void Update()
   {
-    var vector = new Vector3
-    {
-      x = movementInput.x,
-      z = movementInput.y,
-    };
+    var vector = transform.right * movementInput.x + transform.forward * movementInput.y;
 
     controller?.SimpleMove(Vector3.ClampMagnitude(vector, 1f) * 3f);
   }
