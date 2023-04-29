@@ -146,7 +146,7 @@ class PlayerScript : MonoBehaviour
       {
         var strafeMultiplier = (controller.velocity.normalized - vector).magnitude;
 
-        rb.AddForce(Vector3.ClampMagnitude(vector, 1f) * strafeMultiplier * 2f);
+        rb.AddForce(Vector3.ClampMagnitude(vector, 1f) * strafeMultiplier);
       }
     }
   }
