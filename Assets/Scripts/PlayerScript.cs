@@ -6,6 +6,7 @@ using UnityEngine.InputSystem;
 class PlayerScript : MonoBehaviour
 {
   [SerializeField]
+  InputActionAsset? inputActions;
   InputAction? lookAction;
   Vector2 movementInput;
   Vector2 lookInput;
@@ -76,6 +77,11 @@ class PlayerScript : MonoBehaviour
     rb = GetComponent<Rigidbody>();
     controller = GetComponent<CharacterController>();
     cameraContainer = transform.Find("CameraContainer");
+
+    if (inputActions != null)
+    {
+      lookAction = inputActions["Look"];
+    }
   }
 
   void Start()
