@@ -66,7 +66,8 @@ class PlayerScript : MonoBehaviour
 
   public void Jump(InputAction.CallbackContext context)
   {
-    if (isGrounded)
+    
+    if (isGrounded && context.performed)
     {
       AirborneTrue();
 
