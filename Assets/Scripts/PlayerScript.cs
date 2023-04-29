@@ -93,6 +93,7 @@ class PlayerScript : NetworkBehaviour
 
   public override void OnStartLocalPlayer()
   {
+    GetComponent<PlayerInput>().enabled = true;
     rb = GetComponent<Rigidbody>();
     controller = GetComponent<CharacterController>();
     cameraContainer = transform.Find("CameraContainer");
