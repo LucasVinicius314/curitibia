@@ -1,10 +1,10 @@
-using System.Collections;
+using Mirror;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 #nullable enable
 
-class PlayerScript : MonoBehaviour
+class PlayerScript : NetworkBehaviour
 {
   [SerializeField]
   InputActionAsset? inputActions;
@@ -66,6 +66,11 @@ class PlayerScript : MonoBehaviour
 
   public void Jump(InputAction.CallbackContext context)
   {
+    if (!isLocalPlayer)
+    {
+      return;
+    }
+
     if (isGrounded && context.performed)
     {
       AirborneTrue();
@@ -76,36 +81,17 @@ class PlayerScript : MonoBehaviour
 
   public void Move(InputAction.CallbackContext context)
   {
+    if (!isLocalPlayer)
+    {
+      return;
+    }
+
     movementInput = context.ReadValue<Vector2>();
   }
 
-  void OnCollisionEnter(Collision collision)
-  {
-    if (!isGrounded)
-    {
-      var shouldSetAirborneFalse = false;
+  // Mirror Events.
 
-      foreach (var item in collision.contacts)
-      {
-        Debug.DrawRay(item.point, item.normal, Color.green);
-
-        if (item.normal.normalized.y > .6f)
-        {
-          shouldSetAirborneFalse = true;
-
-          break;
-        }
-      }
-
-      // TODO: CheckGroundContact()
-      if (shouldSetAirborneFalse)
-      {
-        AirborneFalse();
-      }
-    }
-  }
-
-  void Awake()
+  public override void OnStartLocalPlayer()
   {
     rb = GetComponent<Rigidbody>();
     controller = GetComponent<CharacterController>();
@@ -115,18 +101,51 @@ class PlayerScript : MonoBehaviour
     {
       lookAction = inputActions["Look"];
     }
-  }
 
-  void Start()
-  {
     Cursor.visible = false;
     Cursor.lockState = CursorLockMode.Locked;
 
     AirborneTrue();
+
+    base.OnStartLocalPlayer();
+  }
+
+  // Unity Events.
+
+  void OnCollisionEnter(Collision collision)
+  {
+    if (!isLocalPlayer || isGrounded)
+    {
+      return;
+    }
+
+    var shouldSetAirborneFalse = false;
+
+    foreach (var item in collision.contacts)
+    {
+      Debug.DrawRay(item.point, item.normal, Color.green);
+
+      if (item.normal.normalized.y > .6f)
+      {
+        shouldSetAirborneFalse = true;
+
+        break;
+      }
+    }
+
+    if (shouldSetAirborneFalse)
+    {
+      AirborneFalse();
+    }
   }
 
   void Update()
   {
+    if (!isLocalPlayer)
+    {
+      return;
+    }
+
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
 
     var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;
@@ -153,7 +172,7 @@ class PlayerScript : MonoBehaviour
 
   void LateUpdate()
   {
-    if (lookAction == null)
+    if (!isLocalPlayer || lookAction == null)
     {
       return;
     }
