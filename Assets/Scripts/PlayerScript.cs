@@ -5,6 +5,8 @@ using UnityEngine.InputSystem;
 
 class PlayerScript : MonoBehaviour
 {
+  [SerializeField]
+  InputAction? lookAction;
   Vector2 movementInput;
   Vector2 lookInput;
   CharacterController? controller;
@@ -53,7 +55,7 @@ class PlayerScript : MonoBehaviour
 
   public void Look(InputAction.CallbackContext context)
   {
-    lookInput = context.ReadValue<Vector2>();
+    // lookInput = context.ReadValue<Vector2>();
   }
 
   public void Move(InputAction.CallbackContext context)
@@ -88,7 +90,7 @@ class PlayerScript : MonoBehaviour
   {
     var vector = transform.right * movementInput.x + transform.forward * movementInput.y;
 
-    if (controller != null)
+    if (controller != null && rb != null)
     {
       // TODO: fix
       // if (isGrounded && !controller.isGrounded)
@@ -96,12 +98,26 @@ class PlayerScript : MonoBehaviour
       //   EnablePhysics(false);
       // }
 
-      controller.SimpleMove(Vector3.ClampMagnitude(vector, 1f) * 3f);
+      if (isGrounded)
+      {
+        controller.SimpleMove(Vector3.ClampMagnitude(vector, 1f) * 3f);
+      }
+      else
+      {
+        rb.AddForce(vector);
+      }
     }
   }
 
   void LateUpdate()
   {
+    if (lookAction == null)
+    {
+      return;
+    }
+
+    var lookInput = lookAction.ReadValue<Vector2>();
+
     const float sensitivity = 10f;
 
     cameraContainerXRotation = Mathf.Clamp(cameraContainerXRotation - lookInput.y * Time.deltaTime * sensitivity, -90f, 90f);
