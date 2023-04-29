@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -9,6 +10,7 @@ class PlayerScript : MonoBehaviour
   InputActionAsset? inputActions;
   InputAction? lookAction;
   Vector2 movementInput;
+  Vector2 smoothedMovementInput;
   Vector2 lookInput;
   CharacterController? controller;
   Rigidbody? rb;
@@ -16,7 +18,7 @@ class PlayerScript : MonoBehaviour
   float cameraContainerXRotation = 0f;
   bool isGrounded = false;
 
-  void DisablePhysics()
+  void AirborneFalse()
   {
     if (controller != null && rb != null)
     {
@@ -26,37 +28,50 @@ class PlayerScript : MonoBehaviour
     }
   }
 
-  void EnablePhysics(bool jump)
+  void AirborneTrue()
   {
     if (controller != null && rb != null)
     {
       isGrounded = false;
       controller.enabled = false;
       rb.isKinematic = false;
-
-      if (jump)
-      {
-        rb.AddForce(new Vector3
-        {
-          x = controller.velocity.x,
-          y = 5f,
-          z = controller.velocity.z,
-        }, ForceMode.Impulse);
-      }
     }
+  }
+
+  bool CheckGroundContact()
+  {
+    var radius = .3f;
+    var offset = Vector3.down * .8f;
+
+    var pos = transform.position + offset;
+
+    Debug.DrawLine(pos + Vector3.up * radius, pos + Vector3.down * radius, Color.red);
+    Debug.DrawLine(pos + Vector3.left * radius, pos + Vector3.right * radius, Color.red);
+    Debug.DrawLine(pos + Vector3.forward * radius, pos + Vector3.back * radius, Color.red);
+
+    return Physics.CheckSphere(pos, radius);
+  }
+
+  void Jump()
+  {
+    if (rb == null || controller == null) return;
+
+    rb.AddForce(new Vector3
+    {
+      x = controller.velocity.x,
+      y = 5f,
+      z = controller.velocity.z,
+    }, ForceMode.Impulse);
   }
 
   public void Jump(InputAction.CallbackContext context)
   {
     if (isGrounded)
     {
-      EnablePhysics(true);
-    }
-  }
+      AirborneTrue();
 
-  public void Look(InputAction.CallbackContext context)
-  {
-    // lookInput = context.ReadValue<Vector2>();
+      Jump();
+    }
   }
 
   public void Move(InputAction.CallbackContext context)
@@ -68,7 +83,25 @@ class PlayerScript : MonoBehaviour
   {
     if (!isGrounded)
     {
-      DisablePhysics();
+      var shouldSetAirborneFalse = false;
+
+      foreach (var item in collision.contacts)
+      {
+        Debug.DrawRay(item.point, item.normal, Color.green);
+
+        if (item.normal.normalized.y > .6f)
+        {
+          shouldSetAirborneFalse = true;
+
+          break;
+        }
+      }
+
+      // TODO: CheckGroundContact()
+      if (shouldSetAirborneFalse)
+      {
+        AirborneFalse();
+      }
     }
   }
 
@@ -89,20 +122,21 @@ class PlayerScript : MonoBehaviour
     Cursor.visible = false;
     Cursor.lockState = CursorLockMode.Locked;
 
-    EnablePhysics(false);
+    AirborneTrue();
   }
 
   void Update()
   {
-    var vector = transform.right * movementInput.x + transform.forward * movementInput.y;
+    smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
+
+    var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;
 
     if (controller != null && rb != null)
     {
-      // TODO: fix
-      // if (isGrounded && !controller.isGrounded)
-      // {
-      //   EnablePhysics(false);
-      // }
+      if (isGrounded && !CheckGroundContact())
+      {
+        AirborneTrue();
+      }
 
       if (isGrounded)
       {
@@ -110,24 +144,31 @@ class PlayerScript : MonoBehaviour
       }
       else
       {
-        rb.AddForce(vector);
+        var strafeMultiplier = (controller.velocity.normalized - vector).magnitude;
+
+        rb.AddForce(Vector3.ClampMagnitude(vector, 1f) * strafeMultiplier * 2f);
       }
     }
+  }
 
-    if (lookAction != null)
+  void LateUpdate()
+  {
+    if (lookAction == null)
     {
-      var lookInput = lookAction.ReadValue<Vector2>();
-
-      const float sensitivity = 10f;
-
-      cameraContainerXRotation = Mathf.Clamp(cameraContainerXRotation - lookInput.y * Time.deltaTime * sensitivity, -90f, 90f);
-
-      if (cameraContainer != null)
-      {
-        cameraContainer.localRotation = Quaternion.Euler(Vector2.right * cameraContainerXRotation);
-      }
-
-      transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * sensitivity);
+      return;
     }
+
+    var lookInput = lookAction.ReadValue<Vector2>();
+
+    const float sensitivity = 10f;
+
+    cameraContainerXRotation = Mathf.Clamp(cameraContainerXRotation - lookInput.y * Time.deltaTime * sensitivity, -90f, 90f);
+
+    if (cameraContainer != null)
+    {
+      cameraContainer.localRotation = Quaternion.Euler(Vector2.right * cameraContainerXRotation);
+    }
+
+    transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * sensitivity);
   }
 }
