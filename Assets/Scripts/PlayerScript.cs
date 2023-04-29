@@ -113,26 +113,21 @@ class PlayerScript : MonoBehaviour
         rb.AddForce(vector);
       }
     }
-  }
 
-  void LateUpdate()
-  {
-    if (lookAction == null)
+    if (lookAction != null)
     {
-      return;
+      var lookInput = lookAction.ReadValue<Vector2>();
+
+      const float sensitivity = 10f;
+
+      cameraContainerXRotation = Mathf.Clamp(cameraContainerXRotation - lookInput.y * Time.deltaTime * sensitivity, -90f, 90f);
+
+      if (cameraContainer != null)
+      {
+        cameraContainer.localRotation = Quaternion.Euler(Vector2.right * cameraContainerXRotation);
+      }
+
+      transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * sensitivity);
     }
-
-    var lookInput = lookAction.ReadValue<Vector2>();
-
-    const float sensitivity = 10f;
-
-    cameraContainerXRotation = Mathf.Clamp(cameraContainerXRotation - lookInput.y * Time.deltaTime * sensitivity, -90f, 90f);
-
-    if (cameraContainer != null)
-    {
-      cameraContainer.localRotation = Quaternion.Euler(Vector2.right * cameraContainerXRotation);
-    }
-
-    transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * sensitivity);
   }
 }
