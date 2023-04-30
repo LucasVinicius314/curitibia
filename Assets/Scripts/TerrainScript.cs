@@ -20,149 +20,11 @@ public class TerrainScript : MonoBehaviour
   MeshCollider? meshCollider;
   MeshFilter? meshFilter;
 
-  bool[,,] terrainMap = {
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-    {
-      { true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-      { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
-    },
-  };
-
-  void Generate(Mesh mesh)
+  void CreateMesh(Mesh mesh, bool[,,] terrainMap)
   {
     mesh.Clear();
 
-    var offset = new Vector3 { x = -3.5f, y = -.5f, z = -3.5f };
+    var offset = new Vector3 { x = -16f, y = -22.5f, z = -16f };
 
     var right = terrainMap.GetLength(0);
     var up = terrainMap.GetLength(1);
@@ -222,6 +84,30 @@ public class TerrainScript : MonoBehaviour
       meshCollider.sharedMesh = mesh;
       meshFilter.mesh = mesh;
     }
+  }
+
+  bool[,,] GenerateTerrainMap(Vector3 dimensions)
+  {
+    const int width = 32;
+    const int height = 32;
+    const int depth = 32;
+
+    var terrainMap = new bool[width, height, depth];
+
+    for (int x = 0; x < width; x++)
+    {
+      for (int z = 0; z < depth; z++)
+      {
+        var targetHeight = Mathf.PerlinNoise(x / 7f, z / 7f) * 4f + height / 2;
+
+        for (int y = 0; y < targetHeight; y++)
+        {
+          terrainMap[x, y, z] = true;
+        }
+      }
+    }
+
+    return terrainMap;
   }
 
   void RenderQuad(Vector3[] vertices, int[] triangles, Vector2[] uv, ref int i, int x, int y, int z, Vector3 offset, Orientation orientation)
@@ -307,7 +193,9 @@ public class TerrainScript : MonoBehaviour
   {
     if (mesh != null)
     {
-      Generate(mesh);
+      var terrainMap = GenerateTerrainMap(new Vector3(32, 32, 32));
+
+      CreateMesh(mesh, terrainMap);
     }
 
     GetComponent<NavMeshSurface>().BuildNavMesh();
