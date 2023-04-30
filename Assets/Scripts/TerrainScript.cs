@@ -1,3 +1,4 @@
+using Unity.AI.Navigation;
 using UnityEngine;
 
 #nullable enable
@@ -236,5 +237,7 @@ public class TerrainScript : MonoBehaviour
     {
       Generate(mesh);
     }
+
+    GetComponent<NavMeshSurface>().BuildNavMesh();
   }
 }
