@@ -43,7 +43,7 @@ GameObject:
   - component: {fileID: 4865056458333033811}
   - component: {fileID: 6437856229921950703}
   - component: {fileID: 2438303631507100383}
-  - component: {fileID: 1537960005826238668}
+  - component: {fileID: 6838653917090077573}
   m_Layer: 6
   m_Name: Capsule
   m_TagString: Untagged
@@ -116,20 +116,20 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!136 &1537960005826238668
-CapsuleCollider:
+--- !u!64 &6838653917090077573
+MeshCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1822672457409945965}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: 641230465fce9b347ba9622b7403c776, type: 2}
   m_IsTrigger: 0
   m_Enabled: 1
-  m_Radius: 0.5
-  m_Height: 2
-  m_Direction: 1
-  m_Center: {x: 0, y: 0, z: 0}
+  serializedVersion: 4
+  m_Convex: 1
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &3290861933181356735
 GameObject:
   m_ObjectHideFlags: 0
@@ -139,7 +139,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3290861933181356734}
-  - component: {fileID: 7321846722879802479}
   - component: {fileID: 5623318578855682230}
   - component: {fileID: 7831193651680502890}
   - component: {fileID: 5928621985654832006}
@@ -170,24 +169,6 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!143 &7321846722879802479
-CharacterController:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3290861933181356735}
-  m_Material: {fileID: 13400000, guid: 641230465fce9b347ba9622b7403c776, type: 2}
-  m_IsTrigger: 0
-  m_Enabled: 1
-  serializedVersion: 2
-  m_Height: 2
-  m_Radius: 0.5
-  m_SlopeLimit: 45
-  m_StepOffset: 0.3
-  m_SkinWidth: 0.08
-  m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &5623318578855682230
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -316,6 +297,9 @@ MonoBehaviour:
   syncInterval: 0
   inputActions: {fileID: -944628639613478452, guid: 0d4c89390405c0043a1858a9f6d7cfab,
     type: 3}
+  g:
+    serializedVersion: 2
+    m_Bits: 64
 --- !u!54 &5928621985654832006
 Rigidbody:
   m_ObjectHideFlags: 0

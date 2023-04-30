@@ -12,56 +12,51 @@ class PlayerScript : NetworkBehaviour
   Vector2 movementInput;
   Vector2 smoothedMovementInput;
   Vector2 lookInput;
-  CharacterController? controller;
   Rigidbody? rb;
   Transform? cameraContainer;
   float cameraContainerXRotation = 0f;
-  bool isGrounded = false;
-
-  void AirborneFalse()
-  {
-    if (controller != null && rb != null)
-    {
-      isGrounded = true;
-      controller.enabled = true;
-      rb.isKinematic = true;
-    }
-  }
-
-  void AirborneTrue()
-  {
-    if (controller != null && rb != null)
-    {
-      isGrounded = false;
-      controller.enabled = false;
-      rb.isKinematic = false;
-    }
-  }
+  [SerializeField]
+  LayerMask g;
 
   bool CheckGroundContact()
   {
-    var radius = .3f;
-    var offset = Vector3.down * .8f;
+    var radius = .5f;
+    var checkHeight = .1f;
+    var originOffset = Vector3.down;
 
-    var pos = transform.position + offset;
+    var checkOffset = .1f * Vector3.down;
+    var origin = transform.position + originOffset;
 
-    Debug.DrawLine(pos + Vector3.up * radius, pos + Vector3.down * radius, Color.red);
-    Debug.DrawLine(pos + Vector3.left * radius, pos + Vector3.right * radius, Color.red);
-    Debug.DrawLine(pos + Vector3.forward * radius, pos + Vector3.back * radius, Color.red);
+    var d = Vector3.down;
 
-    return Physics.CheckSphere(pos, radius);
+    Debug.DrawLine(origin, origin + d * checkHeight, Color.red);
+    Debug.DrawLine(origin + Vector3.left * radius, origin + Vector3.right * radius, Color.red);
+    Debug.DrawLine(origin + Vector3.forward * radius, origin + Vector3.back * radius, Color.red);
+    Debug.DrawLine(origin + d * checkHeight + Vector3.left * radius, origin + d * checkHeight + Vector3.right * radius, Color.red);
+    Debug.DrawLine(origin + d * checkHeight + Vector3.forward * radius, origin + d * checkHeight + Vector3.back * radius, Color.red);
+
+    var a = Physics.CheckCapsule(origin + Vector3.up * radius, origin + Vector3.down * checkHeight + Vector3.down * radius, radius, g);
+
+    var b = Physics.CheckBox(origin + Vector3.down * checkHeight / 2, Vector3.one * checkHeight, Quaternion.identity, g);
+
+    Debug.Log($"{a} {b}");
+
+    return a && b;
   }
 
   void Jump()
   {
-    if (rb == null || controller == null) return;
-
-    rb.AddForce(new Vector3
+    if (rb != null)
     {
-      x = controller.velocity.x,
-      y = 5f,
-      z = controller.velocity.z,
-    }, ForceMode.Impulse);
+      rb.AddForce(new Vector3
+      {
+        x = rb.velocity.x,
+        y = 5f,
+        z = rb.velocity.z,
+      },
+      ForceMode.Impulse
+      );
+    }
   }
 
   public void Jump(InputAction.CallbackContext context)
@@ -71,10 +66,8 @@ class PlayerScript : NetworkBehaviour
       return;
     }
 
-    if (isGrounded && context.performed)
+    if (context.performed && CheckGroundContact())
     {
-      AirborneTrue();
-
       Jump();
     }
   }
@@ -95,7 +88,6 @@ class PlayerScript : NetworkBehaviour
   {
     GetComponent<PlayerInput>().enabled = true;
     rb = GetComponent<Rigidbody>();
-    controller = GetComponent<CharacterController>();
     cameraContainer = transform.Find("CameraContainer");
 
     cameraContainer.Find("Main Camera").GetComponent<Camera>().enabled = true;
@@ -108,8 +100,6 @@ class PlayerScript : NetworkBehaviour
     Cursor.visible = false;
     Cursor.lockState = CursorLockMode.Locked;
 
-    AirborneTrue();
-
     base.OnStartLocalPlayer();
   }
 
@@ -117,34 +107,20 @@ class PlayerScript : NetworkBehaviour
 
   void OnCollisionEnter(Collision collision)
   {
-    if (!isLocalPlayer || isGrounded)
+    if (!isLocalPlayer)
     {
       return;
     }
 
-    var shouldSetAirborneFalse = false;
-
     foreach (var item in collision.contacts)
     {
-      Debug.DrawRay(item.point, item.normal, Color.green);
-
-      if (item.normal.normalized.y > .6f)
-      {
-        shouldSetAirborneFalse = true;
-
-        break;
-      }
-    }
-
-    if (shouldSetAirborneFalse)
-    {
-      AirborneFalse();
+      Debug.DrawRay(item.point, item.normal, Color.green, 1f);
     }
   }
 
   void Update()
   {
-    if (!isLocalPlayer)
+    if (!isLocalPlayer || rb == null)
     {
       return;
     }
@@ -153,23 +129,9 @@ class PlayerScript : NetworkBehaviour
 
     var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;
 
-    if (controller != null && rb != null)
+    if (CheckGroundContact())
     {
-      if (isGrounded && !CheckGroundContact())
-      {
-        AirborneTrue();
-      }
-
-      if (isGrounded)
-      {
-        controller.SimpleMove(Vector3.ClampMagnitude(vector, 1f) * 3f);
-      }
-      else
-      {
-        var strafeMultiplier = (controller.velocity.normalized - vector).magnitude;
-
-        rb.AddForce(Vector3.ClampMagnitude(vector, 1f) * strafeMultiplier);
-      }
+      rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 3f + Vector3.up * rb.velocity.y;
     }
   }
 

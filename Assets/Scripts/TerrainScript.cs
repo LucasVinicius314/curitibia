@@ -99,7 +99,7 @@ public class TerrainScript : MonoBehaviour
     {
       for (int z = 0; z < depth; z++)
       {
-        var targetHeight = Mathf.PerlinNoise(x / 7f, z / 7f) * 4f + height / 2;
+        var targetHeight = Mathf.PerlinNoise(x / 7f, z / 7f) * 8f + height / 2;
 
         for (int y = 0; y < targetHeight; y++)
         {
