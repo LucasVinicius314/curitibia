@@ -98,6 +98,8 @@ class PlayerScript : NetworkBehaviour
     controller = GetComponent<CharacterController>();
     cameraContainer = transform.Find("CameraContainer");
 
+    cameraContainer.Find("Main Camera").GetComponent<Camera>().enabled = true;
+
     if (inputActions != null)
     {
       lookAction = inputActions["Look"];
