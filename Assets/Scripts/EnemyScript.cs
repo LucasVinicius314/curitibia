@@ -12,45 +12,69 @@ public class EnemyScript : NetworkBehaviour
     public NavMeshAgent navMeshAgent;
     private float pathUpdateDeadLine;
     float pathUpdateDelay = 0.2f;
-    float aggroDistance = 14f;
+    float aggroDistance = 5f;
 
-    void Start(){
+    void Start()
+    {
         navMeshAgent = GetComponent<NavMeshAgent>();
+        if (isServer)
+        {
+            StartCoroutine(UpdateTarget());
+        }
+    }
+
+    IEnumerator UpdateTarget()
+    {
+        while (true)
+        {
+            if (target != null)
+            {
+                targetDistance = Vector3.Distance(transform.position, target.position);
+                if (targetDistance < aggroDistance)
+                {
+                    navMeshAgent.SetDestination(target.position);
+                }
+                else
+                {
+                    target = null;
+                }
+            }
+            else
+            {
+                FindTarget();
+            }
+            yield return new WaitForSeconds(0.2f);
+        }
     }
 
     void Update()
     {
-        if (isServer){
-            if (Time.time >= pathUpdateDeadLine){
-                pathUpdateDeadLine = Time.time + pathUpdateDelay;
-                if (target != null){
-                    targetDistance = Vector3.Distance(transform.position, target.position);
-                    if (targetDistance < aggroDistance){
-                        navMeshAgent.SetDestination(target.position);
-                    }
-                }
-                else {
-                    FindTarget();
-                }
-            }
+        if (target != null)
+        {
+            Debug.DrawLine(transform.position, target.position, Color.blue);
         }
     }
 
-    void FindTarget() {
+    void FindTarget()
+    {
         GameObject closestPlayer = null;
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject player in players)
         {
-            if (closestPlayer != null){
-                if (Vector3.Distance(transform.position, player.transform.position) > Vector3.Distance(transform.position, closestPlayer.transform.position)){
+            if (closestPlayer != null)
+            {
+                if (Vector3.Distance(transform.position, player.transform.position) < Vector3.Distance(transform.position, closestPlayer.transform.position))
+                {
                     closestPlayer = player;
                 }
             }
-            else {
+            else
+            {
                 closestPlayer = player;
             }
         }
-        if (closestPlayer != null) {
+        if (closestPlayer != null && Vector3.Distance(transform.position, closestPlayer.transform.position) < aggroDistance)
+        {
             target = closestPlayer.transform;
         }
     }
