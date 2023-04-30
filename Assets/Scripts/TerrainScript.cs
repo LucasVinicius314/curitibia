@@ -30,11 +30,12 @@ public class TerrainScript : MonoBehaviour
     var up = terrainMap.GetLength(1);
     var forward = terrainMap.GetLength(2);
 
-    var uv = new Vector2[6 * 6 * right * up * forward];
+    var uv = new Vector2[4 * 6 * right * up * forward];
     var triangles = new int[6 * 6 * right * up * forward];
-    var vertices = new Vector3[6 * 6 * right * up * forward];
+    var vertices = new Vector3[4 * 6 * right * up * forward];
 
-    var i = 0;
+    var vc = 0;
+    var tc = 0;
 
     for (int x = 0; x < right; x++)
     {
@@ -46,27 +47,27 @@ public class TerrainScript : MonoBehaviour
           {
             if (x == 0 || !terrainMap[x - 1, y, z])
             {
-              RenderQuad(vertices, triangles, uv, ref i, x, y, z, offset, Orientation.west);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.west);
             }
             if (x == right - 1 || !terrainMap[x + 1, y, z])
             {
-              RenderQuad(vertices, triangles, uv, ref i, x, y, z, offset, Orientation.east);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.east);
             }
             if (y == 0 || !terrainMap[x, y - 1, z])
             {
-              RenderQuad(vertices, triangles, uv, ref i, x, y, z, offset, Orientation.down);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.down);
             }
             if (y == up - 1 || !terrainMap[x, y + 1, z])
             {
-              RenderQuad(vertices, triangles, uv, ref i, x, y, z, offset, Orientation.up);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.up);
             }
             if (z == 0 || !terrainMap[x, y, z - 1])
             {
-              RenderQuad(vertices, triangles, uv, ref i, x, y, z, offset, Orientation.south);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.south);
             }
             if (z == forward - 1 || !terrainMap[x, y, z + 1])
             {
-              RenderQuad(vertices, triangles, uv, ref i, x, y, z, offset, Orientation.north);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.north);
             }
           }
         }
@@ -110,75 +111,62 @@ public class TerrainScript : MonoBehaviour
     return terrainMap;
   }
 
-  void RenderQuad(Vector3[] vertices, int[] triangles, Vector2[] uv, ref int i, int x, int y, int z, Vector3 offset, Orientation orientation)
+  void RenderQuad(Vector3[] vertices, int[] triangles, Vector2[] uv, ref int vc, ref int tc, int x, int y, int z, Vector3 offset, Orientation orientation)
   {
     switch (orientation)
     {
       case Orientation.up:
-        vertices[i] = new Vector3(x, y + 1, z) + offset;
-        vertices[i + 1] = new Vector3(x, y + 1, z + 1) + offset;
-        vertices[i + 2] = new Vector3(x + 1, y + 1, z) + offset;
-        vertices[i + 3] = new Vector3(x + 1, y + 1, z) + offset;
-        vertices[i + 4] = new Vector3(x, y + 1, z + 1) + offset;
-        vertices[i + 5] = new Vector3(x + 1, y + 1, z + 1) + offset;
+        vertices[vc] = new Vector3(x, y + 1, z) + offset;
+        vertices[vc + 1] = new Vector3(x, y + 1, z + 1) + offset;
+        vertices[vc + 2] = new Vector3(x + 1, y + 1, z) + offset;
+        vertices[vc + 3] = new Vector3(x + 1, y + 1, z + 1) + offset;
         break;
       case Orientation.down:
-        vertices[i] = new Vector3(x, y, z) + offset;
-        vertices[i + 1] = new Vector3(x + 1, y, z) + offset;
-        vertices[i + 2] = new Vector3(x, y, z + 1) + offset;
-        vertices[i + 3] = new Vector3(x, y, z + 1) + offset;
-        vertices[i + 4] = new Vector3(x + 1, y, z) + offset;
-        vertices[i + 5] = new Vector3(x + 1, y, z + 1) + offset;
+        vertices[vc] = new Vector3(x, y, z) + offset;
+        vertices[vc + 1] = new Vector3(x + 1, y, z) + offset;
+        vertices[vc + 2] = new Vector3(x, y, z + 1) + offset;
+        vertices[vc + 3] = new Vector3(x + 1, y, z + 1) + offset;
         break;
       case Orientation.north:
-        vertices[i] = new Vector3(x + 1, y, z + 1) + offset;
-        vertices[i + 1] = new Vector3(x + 1, y + 1, z + 1) + offset;
-        vertices[i + 2] = new Vector3(x, y, z + 1) + offset;
-        vertices[i + 3] = new Vector3(x, y, z + 1) + offset;
-        vertices[i + 4] = new Vector3(x + 1, y + 1, z + 1) + offset;
-        vertices[i + 5] = new Vector3(x, y + 1, z + 1) + offset;
+        vertices[vc] = new Vector3(x + 1, y, z + 1) + offset;
+        vertices[vc + 1] = new Vector3(x + 1, y + 1, z + 1) + offset;
+        vertices[vc + 2] = new Vector3(x, y, z + 1) + offset;
+        vertices[vc + 3] = new Vector3(x, y + 1, z + 1) + offset;
         break;
       case Orientation.south:
-        vertices[i] = new Vector3(x, y, z) + offset;
-        vertices[i + 1] = new Vector3(x, y + 1, z) + offset;
-        vertices[i + 2] = new Vector3(x + 1, y, z) + offset;
-        vertices[i + 3] = new Vector3(x + 1, y, z) + offset;
-        vertices[i + 4] = new Vector3(x, y + 1, z) + offset;
-        vertices[i + 5] = new Vector3(x + 1, y + 1, z) + offset;
+        vertices[vc] = new Vector3(x, y, z) + offset;
+        vertices[vc + 1] = new Vector3(x, y + 1, z) + offset;
+        vertices[vc + 2] = new Vector3(x + 1, y, z) + offset;
+        vertices[vc + 3] = new Vector3(x + 1, y + 1, z) + offset;
         break;
       case Orientation.east:
-        vertices[i] = new Vector3(x + 1, y, z) + offset;
-        vertices[i + 1] = new Vector3(x + 1, y + 1, z) + offset;
-        vertices[i + 2] = new Vector3(x + 1, y, z + 1) + offset;
-        vertices[i + 3] = new Vector3(x + 1, y, z + 1) + offset;
-        vertices[i + 4] = new Vector3(x + 1, y + 1, z) + offset;
-        vertices[i + 5] = new Vector3(x + 1, y + 1, z + 1) + offset;
+        vertices[vc] = new Vector3(x + 1, y, z) + offset;
+        vertices[vc + 1] = new Vector3(x + 1, y + 1, z) + offset;
+        vertices[vc + 2] = new Vector3(x + 1, y, z + 1) + offset;
+        vertices[vc + 3] = new Vector3(x + 1, y + 1, z + 1) + offset;
         break;
       case Orientation.west:
-        vertices[i] = new Vector3(x, y, z) + offset;
-        vertices[i + 1] = new Vector3(x, y, z + 1) + offset;
-        vertices[i + 2] = new Vector3(x, y + 1, z) + offset;
-        vertices[i + 3] = new Vector3(x, y + 1, z) + offset;
-        vertices[i + 4] = new Vector3(x, y, z + 1) + offset;
-        vertices[i + 5] = new Vector3(x, y + 1, z + 1) + offset;
+        vertices[vc] = new Vector3(x, y, z) + offset;
+        vertices[vc + 1] = new Vector3(x, y, z + 1) + offset;
+        vertices[vc + 2] = new Vector3(x, y + 1, z) + offset;
+        vertices[vc + 3] = new Vector3(x, y + 1, z + 1) + offset;
         break;
     }
 
-    uv[i] = new Vector2(0, 0);
-    uv[i + 1] = new Vector2(0, 1);
-    uv[i + 2] = new Vector2(1, 0);
-    uv[i + 3] = new Vector2(1, 0);
-    uv[i + 4] = new Vector2(0, 1);
-    uv[i + 5] = new Vector2(1, 1);
+    uv[vc] = new Vector2(0, 0);
+    uv[vc + 1] = new Vector2(0, 1);
+    uv[vc + 2] = new Vector2(1, 0);
+    uv[vc + 3] = new Vector2(1, 1);
 
-    triangles[i] = i;
-    triangles[i + 1] = i + 1;
-    triangles[i + 2] = i + 2;
-    triangles[i + 3] = i + 3;
-    triangles[i + 4] = i + 4;
-    triangles[i + 5] = i + 5;
+    triangles[tc] = vc;
+    triangles[tc + 1] = vc + 1;
+    triangles[tc + 2] = vc + 2;
+    triangles[tc + 3] = vc + 2;
+    triangles[tc + 4] = vc + 1;
+    triangles[tc + 5] = vc + 3;
 
-    i += 6;
+    vc += 4;
+    tc += 6;
   }
 
   void Awake()
