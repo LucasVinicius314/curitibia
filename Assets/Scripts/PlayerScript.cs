@@ -21,8 +21,8 @@ class PlayerScript : NetworkBehaviour
   bool CheckGroundContact()
   {
     var radius = .5f;
-    var checkHeight = .1f;
-    var originOffset = Vector3.down;
+    var checkHeight = .2f;
+    var originOffset = Vector3.down * .9f;
 
     var checkOffset = .1f * Vector3.down;
     var origin = transform.position + originOffset;

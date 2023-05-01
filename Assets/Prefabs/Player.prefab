@@ -299,7 +299,7 @@ MonoBehaviour:
     type: 3}
   g:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 1
 --- !u!54 &5928621985654832006
 Rigidbody:
   m_ObjectHideFlags: 0
