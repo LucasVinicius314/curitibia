@@ -12,35 +12,46 @@ public class EnemyScript : NetworkBehaviour
     public NavMeshAgent navMeshAgent;
     private float pathUpdateDeadLine;
     float pathUpdateDelay = 0.2f;
-    float aggroDistance = 5f;
+    float maxRange = 13f;
+    LayerMask ignoreSelf = 1 << 7;
+    string enemyState;
 
     void Start()
     {
+        ignoreSelf = ~ignoreSelf;
         navMeshAgent = GetComponent<NavMeshAgent>();
         if (isServer)
         {
-            StartCoroutine(UpdateTarget());
+            StartCoroutine(UpdateState());
         }
     }
 
-    IEnumerator UpdateTarget()
+    IEnumerator UpdateState()
     {
+        enemyState = "Patrolling";
         while (true)
         {
             if (target != null)
             {
-                targetDistance = Vector3.Distance(transform.position, target.position);
-                if (targetDistance < aggroDistance)
+                if (CheckVisibility(target.position))
                 {
+                    navMeshAgent.stoppingDistance = 2f;
+                    enemyState = "Chasing";
                     navMeshAgent.SetDestination(target.position);
                 }
                 else
                 {
+                    navMeshAgent.stoppingDistance = 0;
+                    enemyState = "Searching";
                     target = null;
                 }
             }
             else
             {
+                if (Vector3.Distance(transform.position, navMeshAgent.destination) < .5f)
+                {
+                    enemyState = "Patrolling";
+                }
                 FindTarget();
             }
             yield return new WaitForSeconds(0.2f);
@@ -49,10 +60,20 @@ public class EnemyScript : NetworkBehaviour
 
     void Update()
     {
-        if (target != null)
+        Color stateColor = Color.green;
+        if (target == null)
         {
-            Debug.DrawLine(transform.position, target.position, Color.blue);
+            stateColor = Color.cyan;
         }
+        else
+        {
+            NavMeshHit hit;
+            if (!navMeshAgent.Raycast(target.position, out hit))
+            {
+                Debug.DrawLine(transform.position, hit.position, Color.gray);
+            }
+        }
+        Debug.DrawLine(transform.position, navMeshAgent.destination, stateColor);
     }
 
     void FindTarget()
@@ -73,9 +94,33 @@ public class EnemyScript : NetworkBehaviour
                 closestPlayer = player;
             }
         }
-        if (closestPlayer != null && Vector3.Distance(transform.position, closestPlayer.transform.position) < aggroDistance)
+        if (closestPlayer != null)
         {
-            target = closestPlayer.transform;
+            if (CheckVisibility(closestPlayer.transform.position))
+            {
+                target = closestPlayer.transform;
+            }
         }
+    }
+
+    bool CheckVisibility(Vector3 target)
+    {
+        if (target != null)
+        {
+            RaycastHit hit;
+            Vector3 transformOffset = transform.position + new Vector3(0, 1f, 0);
+            targetDistance = Vector3.Distance(transform.position, target);
+            if (targetDistance < maxRange)
+            {
+                if (Physics.Raycast(transformOffset, target - transformOffset, out hit, maxRange))
+                {
+                    if (hit.transform.tag == "Player")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 }

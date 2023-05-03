@@ -39,7 +39,7 @@ class PlayerScript : NetworkBehaviour
 
     var b = Physics.CheckBox(origin + Vector3.down * checkHeight / 2, Vector3.one * checkHeight, Quaternion.identity, g);
 
-    Debug.Log($"{a} {b}");
+    // Debug.Log($"{a} {b}");
 
     return a && b;
   }
