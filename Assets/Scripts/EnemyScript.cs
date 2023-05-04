@@ -6,24 +6,50 @@ using Mirror;
 public class EnemyScript : NetworkBehaviour
 {
     // Start is called before the first frame update
-    public Transform target;
-    public GameObject projectile;
-    [SerializeField] float targetDistance;
-    public NavMeshAgent navMeshAgent;
+    Transform target;
+    GameObject projectile;
+    NavMeshAgent navMeshAgent;
+    LayerMask enemyLayer = 1 << 7;
+    Transform root;
+    Transform legR;
+    Transform legL;
+    float legSwitch = 1f;
+    float steppingFrequencty = 1f;
+    float targetDistance;
+    float speed;
+    float speedPerSec;
+    Vector3 oldPosition;
     float pathUpdateDelay = 0.2f;
     float maxRange = 13f;
     float fieldOfView = 70f;
-    LayerMask enemyLayer = 1 << 7;
-    string enemyState;
 
     void Start()
     {
         projectile = Utils.LoadPrefabFromFile("Prefabs/Projectile");
         navMeshAgent = GetComponent<NavMeshAgent>();
+        root = transform.Find("Amogos/Root");
+        legR = transform.Find("Amogos/Root/Legs/Leg_R");
+        legL = transform.Find("Amogos/Root/Legs/Leg_L");
+        oldPosition = transform.position;
         if (isServer)
         {
             StartCoroutine(UpdateState());
+            StartCoroutine(HandleLegSwitch());
         }
+    }
+
+    IEnumerator HandleLegSwitch() {
+        while (true){
+            legSwitch = legSwitch == 1f ? -1f : 1f;
+            yield return new WaitForSeconds(0.3f);
+        }
+    }
+
+    void AnimateRunning() {
+        // steppingFrequencty = Mathf.Clamp(speedPerSec / 10, .1f, 1f);
+        legR.localRotation = Quaternion.RotateTowards(legR.localRotation, Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f * -legSwitch, -60, 60), 0, 0), speedPerSec+1f);
+        legL.localRotation = Quaternion.RotateTowards(legL.localRotation, Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f * legSwitch, -60, 60), 0, 0), speedPerSec+1f);
+        root.localRotation =  Quaternion.Euler(speedPerSec * 4, 0, 0);
     }
 
     IEnumerator UpdateState()
@@ -54,6 +80,9 @@ public class EnemyScript : NetworkBehaviour
 
     void Update()
     {
+        speedPerSec = Vector3.Distance(oldPosition, transform.position) / Time.deltaTime;
+        speed = Vector3.Distance(oldPosition, transform.position);
+        oldPosition = transform.position;
         if (target == null)
         {
             Debug.DrawLine(transform.position, navMeshAgent.destination, Color.grey);
@@ -63,8 +92,10 @@ public class EnemyScript : NetworkBehaviour
             Debug.DrawLine(transform.position, target.position, Color.white);
         }
         Debug.DrawRay(transform.position, transform.TransformDirection(Vector3.forward), Color.red);
+        AnimateRunning();
     }
 
+    // Search for the closest player
     void FindTarget()
     {
         GameObject closestPlayer = null;
@@ -97,6 +128,7 @@ public class EnemyScript : NetworkBehaviour
         GameObject.Instantiate(projectile, transform.position, Quaternion.identity);
     }
 
+    // Check if target is visible
     bool CheckVisibility(Vector3 targetPosition)
     {
         if (targetPosition != null)
@@ -115,7 +147,6 @@ public class EnemyScript : NetworkBehaviour
                 }
             }
         }
-        Debug.DrawLine(transform.position, targetPosition, Color.red);
         return false;
     }
 }
