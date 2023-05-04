@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 using Mirror;
@@ -8,16 +7,18 @@ public class EnemyScript : NetworkBehaviour
 {
     // Start is called before the first frame update
     public Transform target;
+    public GameObject projectile;
     [SerializeField] float targetDistance;
     public NavMeshAgent navMeshAgent;
     float pathUpdateDelay = 0.2f;
     float maxRange = 13f;
-    LayerMask ignoreSelf = 1 << 7;
+    float fieldOfView = 70f;
+    LayerMask enemyLayer = 1 << 7;
     string enemyState;
 
     void Start()
     {
-        ignoreSelf = ~ignoreSelf;
+        projectile = Utils.LoadPrefabFromFile("Prefabs/Projectile");
         navMeshAgent = GetComponent<NavMeshAgent>();
         if (isServer)
         {
@@ -27,7 +28,6 @@ public class EnemyScript : NetworkBehaviour
 
     IEnumerator UpdateState()
     {
-        enemyState = "Patrolling";
         while (true)
         {
             if (target != null)
@@ -35,22 +35,17 @@ public class EnemyScript : NetworkBehaviour
                 if (CheckVisibility(target.position))
                 {
                     navMeshAgent.stoppingDistance = 2f;
-                    enemyState = "Chasing";
                     navMeshAgent.SetDestination(target.position);
+                    // Shoot();
                 }
                 else
                 {
                     navMeshAgent.stoppingDistance = 0;
-                    enemyState = "Searching";
                     target = null;
                 }
             }
             else
             {
-                if (Vector3.Distance(transform.position, navMeshAgent.destination) < .5f)
-                {
-                    enemyState = "Patrolling";
-                }
                 FindTarget();
             }
             yield return new WaitForSeconds(pathUpdateDelay);
@@ -59,20 +54,15 @@ public class EnemyScript : NetworkBehaviour
 
     void Update()
     {
-        Color stateColor = Color.green;
         if (target == null)
         {
-            stateColor = Color.cyan;
+            Debug.DrawLine(transform.position, navMeshAgent.destination, Color.grey);
         }
         else
         {
-            NavMeshHit hit;
-            if (!navMeshAgent.Raycast(target.position, out hit))
-            {
-                Debug.DrawLine(transform.position, hit.position, Color.gray);
-            }
+            Debug.DrawLine(transform.position, target.position, Color.white);
         }
-        Debug.DrawLine(transform.position, navMeshAgent.destination, stateColor);
+        Debug.DrawRay(transform.position, transform.TransformDirection(Vector3.forward), Color.red);
     }
 
     void FindTarget()
@@ -102,16 +92,21 @@ public class EnemyScript : NetworkBehaviour
         }
     }
 
-    bool CheckVisibility(Vector3 target)
+    void Shoot()
     {
-        if (target != null)
+        GameObject.Instantiate(projectile, transform.position, Quaternion.identity);
+    }
+
+    bool CheckVisibility(Vector3 targetPosition)
+    {
+        if (targetPosition != null)
         {
             RaycastHit hit;
-            Vector3 transformOffset = transform.position + new Vector3(0, 1f, 0);
-            targetDistance = Vector3.Distance(transform.position, target);
-            if (targetDistance < maxRange)
+            Vector3 targetDirection = targetPosition - transform.position;
+            float angle = Vector3.Angle(targetDirection, transform.forward);
+            if (angle < fieldOfView)
             {
-                if (Physics.Raycast(transformOffset, target - transformOffset, out hit, maxRange, ignoreSelf))
+                if (Physics.Raycast(transform.position, targetDirection, out hit, maxRange, ~enemyLayer))
                 {
                     if (hit.transform.tag == "Player")
                     {
@@ -120,6 +115,7 @@ public class EnemyScript : NetworkBehaviour
                 }
             }
         }
+        Debug.DrawLine(transform.position, targetPosition, Color.red);
         return false;
     }
 }
