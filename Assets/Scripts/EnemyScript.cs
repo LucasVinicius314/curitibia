@@ -10,7 +10,6 @@ public class EnemyScript : NetworkBehaviour
     public Transform target;
     [SerializeField] float targetDistance;
     public NavMeshAgent navMeshAgent;
-    private float pathUpdateDeadLine;
     float pathUpdateDelay = 0.2f;
     float maxRange = 13f;
     LayerMask ignoreSelf = 1 << 7;
@@ -54,7 +53,7 @@ public class EnemyScript : NetworkBehaviour
                 }
                 FindTarget();
             }
-            yield return new WaitForSeconds(0.2f);
+            yield return new WaitForSeconds(pathUpdateDelay);
         }
     }
 
