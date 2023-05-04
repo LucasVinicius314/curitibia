@@ -111,7 +111,7 @@ public class EnemyScript : NetworkBehaviour
             targetDistance = Vector3.Distance(transform.position, target);
             if (targetDistance < maxRange)
             {
-                if (Physics.Raycast(transformOffset, target - transformOffset, out hit, maxRange))
+                if (Physics.Raycast(transformOffset, target - transformOffset, out hit, maxRange, ignoreSelf))
                 {
                     if (hit.transform.tag == "Player")
                     {
