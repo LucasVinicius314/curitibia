@@ -171,17 +171,4 @@ public class EnemyScript : NetworkBehaviour
         }
         return isVisible;
     }
-
-    void OnCollisionEnter(Collision collision)
-    {
-        if (!isServer) return;
-        foreach (var item in collision.contacts)
-        {
-            if (collision.transform.tag == "Player")
-            {
-                collision.gameObject.GetComponent<Rigidbody>().AddExplosionForce(20, -item.point, 1f);
-                Debug.DrawLine(item.point, item.normal, Color.magenta, 1.5f);
-            }
-        }
-    }
 }
