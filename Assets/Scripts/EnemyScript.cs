@@ -13,10 +13,10 @@ public class EnemyScript : NetworkBehaviour
     Transform root;
     Transform legR;
     Transform legL;
-    float legSwitch = 1f;
     float targetDistance;
     float speed;
     float speedPerSec;
+    float animationRandomiser;
     Vector3 oldPosition;
     float pathUpdateDelay = 0.2f;
     float maxRange = 13f;
@@ -30,24 +30,19 @@ public class EnemyScript : NetworkBehaviour
         legR = transform.Find("Amogos/Root/Legs/Leg_R");
         legL = transform.Find("Amogos/Root/Legs/Leg_L");
         oldPosition = transform.position;
+        animationRandomiser = Random.Range(0, 50);
         if (isServer)
         {
             StartCoroutine(UpdateState());
-            StartCoroutine(HandleLegSwitch());
         }
     }
 
-    IEnumerator HandleLegSwitch() {
-        while (true){
-            legSwitch = legSwitch == 1f ? -1f : 1f;
-            yield return new WaitForSeconds(0.3f);
-        }
-    }
-
-    void AnimateRunning() {
-        legR.localRotation = Quaternion.RotateTowards(legR.localRotation, Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f * -legSwitch, -60, 60), 0, 0), speedPerSec+1f);
-        legL.localRotation = Quaternion.RotateTowards(legL.localRotation, Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f * legSwitch, -60, 60), 0, 0), speedPerSec+1f);
-        root.localRotation =  Quaternion.Euler(speedPerSec * 4, 0, 0);
+    void AnimateRunning()
+    {
+        float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 10f);
+        legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), (animationSin + 1f ) / 2f );
+        legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), (animationSin + 1f ) / 2f );
+        root.localRotation = Quaternion.Euler(speedPerSec * 4, animationSin * speedPerSec * 6, 0);
     }
 
     IEnumerator UpdateState()
@@ -60,7 +55,7 @@ public class EnemyScript : NetworkBehaviour
                 {
                     navMeshAgent.stoppingDistance = 2f;
                     navMeshAgent.SetDestination(target.position);
-                    Shoot();
+                    // Shoot();
                 }
                 else
                 {
