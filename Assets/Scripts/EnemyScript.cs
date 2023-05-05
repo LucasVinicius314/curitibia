@@ -7,14 +7,13 @@ public class EnemyScript : NetworkBehaviour
 {
     // Start is called before the first frame update
     Transform target;
-    GameObject projectile;
+    GameObject projectilePrefab;
     NavMeshAgent navMeshAgent;
     LayerMask enemyLayer = 1 << 7;
     Transform root;
     Transform legR;
     Transform legL;
     float legSwitch = 1f;
-    float steppingFrequencty = 1f;
     float targetDistance;
     float speed;
     float speedPerSec;
@@ -25,7 +24,7 @@ public class EnemyScript : NetworkBehaviour
 
     void Start()
     {
-        projectile = Utils.LoadPrefabFromFile("Prefabs/Projectile");
+        projectilePrefab = Utils.LoadPrefabFromFile("Prefabs/Projectile");
         navMeshAgent = GetComponent<NavMeshAgent>();
         root = transform.Find("Amogos/Root");
         legR = transform.Find("Amogos/Root/Legs/Leg_R");
@@ -46,7 +45,6 @@ public class EnemyScript : NetworkBehaviour
     }
 
     void AnimateRunning() {
-        // steppingFrequencty = Mathf.Clamp(speedPerSec / 10, .1f, 1f);
         legR.localRotation = Quaternion.RotateTowards(legR.localRotation, Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f * -legSwitch, -60, 60), 0, 0), speedPerSec+1f);
         legL.localRotation = Quaternion.RotateTowards(legL.localRotation, Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f * legSwitch, -60, 60), 0, 0), speedPerSec+1f);
         root.localRotation =  Quaternion.Euler(speedPerSec * 4, 0, 0);
@@ -62,7 +60,7 @@ public class EnemyScript : NetworkBehaviour
                 {
                     navMeshAgent.stoppingDistance = 2f;
                     navMeshAgent.SetDestination(target.position);
-                    // Shoot();
+                    Shoot();
                 }
                 else
                 {
@@ -125,7 +123,9 @@ public class EnemyScript : NetworkBehaviour
 
     void Shoot()
     {
-        GameObject.Instantiate(projectile, transform.position, Quaternion.identity);
+        GameObject projectile = Instantiate(projectilePrefab, transform.position + Vector3.up, transform.rotation);
+        // Debug.Log(projectile.GetHashCode());
+        NetworkServer.Spawn(projectile);
     }
 
     // Check if target is visible
