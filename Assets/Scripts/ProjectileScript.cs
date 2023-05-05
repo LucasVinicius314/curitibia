@@ -31,11 +31,6 @@ public class ProjectileScript : NetworkBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (!isServer) return;
-        if (applyForce)
-        {
-            applyForce = false;
-        }
-
+        
     }
 }

@@ -9,18 +9,20 @@ public class EnemyScript : NetworkBehaviour
     Transform target;
     GameObject projectilePrefab;
     NavMeshAgent navMeshAgent;
-    LayerMask enemyLayer = 1 << 7;
     Transform root;
     Transform legR;
     Transform legL;
+    Vector3 oldPosition;
+    LayerMask enemyLayer = 1 << 7;
+    float turningSpeed = 6f;
+    float pathUpdateDelay = 0.2f;
+    float maxRange = 13f;
+    float fieldOfView = 70f;
+    float stoppingDistance = .5f;
     float targetDistance;
     float speed;
     float speedPerSec;
     float animationRandomiser;
-    Vector3 oldPosition;
-    float pathUpdateDelay = 0.2f;
-    float maxRange = 13f;
-    float fieldOfView = 70f;
 
     void Start()
     {
@@ -40,8 +42,8 @@ public class EnemyScript : NetworkBehaviour
     void AnimateRunning()
     {
         float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 10f);
-        legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), (animationSin + 1f ) / 2f );
-        legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), (animationSin + 1f ) / 2f );
+        legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
+        legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
         root.localRotation = Quaternion.Euler(speedPerSec * 4, animationSin * speedPerSec * 6, 0);
     }
 
@@ -51,21 +53,20 @@ public class EnemyScript : NetworkBehaviour
         {
             if (target != null)
             {
-                if (CheckVisibility(target.position))
+                if (CheckVisibility(target.position) || targetDistance < 2f)
                 {
-                    navMeshAgent.stoppingDistance = 2f;
+                    
+                    navMeshAgent.stoppingDistance = stoppingDistance;
                     navMeshAgent.SetDestination(target.position);
-                    // Shoot();
                 }
                 else
                 {
-                    navMeshAgent.stoppingDistance = 0;
-                    target = null;
+                    LoseTarget();
                 }
             }
             else
             {
-                FindTarget();
+                FindNewTarget();
             }
             yield return new WaitForSeconds(pathUpdateDelay);
         }
@@ -76,20 +77,26 @@ public class EnemyScript : NetworkBehaviour
         speedPerSec = Vector3.Distance(oldPosition, transform.position) / Time.deltaTime;
         speed = Vector3.Distance(oldPosition, transform.position);
         oldPosition = transform.position;
+
         if (target == null)
         {
             Debug.DrawLine(transform.position, navMeshAgent.destination, Color.grey);
         }
         else
         {
+            targetDistance = Vector3.Distance(transform.position, target.position);
             Debug.DrawLine(transform.position, target.position, Color.white);
         }
         Debug.DrawRay(transform.position, transform.TransformDirection(Vector3.forward), Color.red);
         AnimateRunning();
+        if (navMeshAgent.remainingDistance < 4f && target != null)
+        {
+            LookAt(target.position);
+        }
     }
 
     // Search for the closest player
-    void FindTarget()
+    void FindNewTarget()
     {
         GameObject closestPlayer = null;
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
@@ -116,6 +123,25 @@ public class EnemyScript : NetworkBehaviour
         }
     }
 
+    void LoseTarget()
+    {
+        if (target == null) return;
+        Vector3 targetTracker = target.position + target.forward;
+        target = null;
+        navMeshAgent.stoppingDistance = .5f;
+        navMeshAgent.SetDestination(targetTracker);
+
+    }
+
+    void LookAt(Vector3 targetPosition)
+    {
+        if (targetPosition == null) return;
+        Vector3 direction = (targetPosition - transform.position).normalized;
+        // direction.y = 0;
+        Quaternion _lookRotation = Quaternion.LookRotation(direction);
+        transform.rotation = Quaternion.Slerp(transform.rotation, _lookRotation, Time.deltaTime * turningSpeed);
+    }
+
     void Shoot()
     {
         GameObject projectile = Instantiate(projectilePrefab, transform.position + Vector3.up, transform.rotation);
@@ -126,6 +152,7 @@ public class EnemyScript : NetworkBehaviour
     // Check if target is visible
     bool CheckVisibility(Vector3 targetPosition)
     {
+        bool isVisible = false;
         if (targetPosition != null)
         {
             RaycastHit hit;
@@ -137,11 +164,24 @@ public class EnemyScript : NetworkBehaviour
                 {
                     if (hit.transform.tag == "Player")
                     {
-                        return true;
+                        isVisible = true;
                     }
                 }
             }
         }
-        return false;
+        return isVisible;
+    }
+
+    void OnCollisionEnter(Collision collision)
+    {
+        if (!isServer) return;
+        foreach (var item in collision.contacts)
+        {
+            if (collision.transform.tag == "Player")
+            {
+                collision.gameObject.GetComponent<Rigidbody>().AddExplosionForce(20, -item.point, 1f);
+                Debug.DrawLine(item.point, item.normal, Color.magenta, 1.5f);
+            }
+        }
     }
 }
