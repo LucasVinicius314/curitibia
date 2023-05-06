@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 using Mirror;
@@ -7,76 +6,97 @@ using Mirror;
 public class EnemyScript : NetworkBehaviour
 {
     // Start is called before the first frame update
-    public Transform target;
-    [SerializeField] float targetDistance;
-    public NavMeshAgent navMeshAgent;
-    private float pathUpdateDeadLine;
+    Transform target;
+    GameObject projectilePrefab;
+    NavMeshAgent navMeshAgent;
+    Transform root;
+    Transform legR;
+    Transform legL;
+    Vector3 oldPosition;
+    LayerMask enemyLayer = 1 << 7;
+    float turningSpeed = 6f;
     float pathUpdateDelay = 0.2f;
     float maxRange = 13f;
-    LayerMask ignoreSelf = 1 << 7;
-    string enemyState;
+    float fieldOfView = 70f;
+    float stoppingDistance = .5f;
+    float targetDistance;
+    float speed;
+    float speedPerSec;
+    float animationRandomiser;
 
     void Start()
     {
-        ignoreSelf = ~ignoreSelf;
+        projectilePrefab = Utils.LoadPrefabFromFile("Prefabs/Projectile");
         navMeshAgent = GetComponent<NavMeshAgent>();
+        root = transform.Find("Amogos/Root");
+        legR = transform.Find("Amogos/Root/Legs/Leg_R");
+        legL = transform.Find("Amogos/Root/Legs/Leg_L");
+        oldPosition = transform.position;
+        animationRandomiser = Random.Range(0, 50);
         if (isServer)
         {
             StartCoroutine(UpdateState());
         }
     }
 
+    void AnimateRunning()
+    {
+        float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 10f);
+        legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
+        legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(speedPerSec * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(speedPerSec * -40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
+        root.localRotation = Quaternion.Euler(speedPerSec * 4, animationSin * speedPerSec * 6, 0);
+    }
+
     IEnumerator UpdateState()
     {
-        enemyState = "Patrolling";
         while (true)
         {
             if (target != null)
             {
-                if (CheckVisibility(target.position))
+                if (CheckVisibility(target.position) || targetDistance < 2f)
                 {
-                    navMeshAgent.stoppingDistance = 2f;
-                    enemyState = "Chasing";
+                    
+                    navMeshAgent.stoppingDistance = stoppingDistance;
                     navMeshAgent.SetDestination(target.position);
                 }
                 else
                 {
-                    navMeshAgent.stoppingDistance = 0;
-                    enemyState = "Searching";
-                    target = null;
+                    LoseTarget();
                 }
             }
             else
             {
-                if (Vector3.Distance(transform.position, navMeshAgent.destination) < .5f)
-                {
-                    enemyState = "Patrolling";
-                }
-                FindTarget();
+                FindNewTarget();
             }
-            yield return new WaitForSeconds(0.2f);
+            yield return new WaitForSeconds(pathUpdateDelay);
         }
     }
 
     void Update()
     {
-        Color stateColor = Color.green;
+        speedPerSec = Vector3.Distance(oldPosition, transform.position) / Time.deltaTime;
+        speed = Vector3.Distance(oldPosition, transform.position);
+        oldPosition = transform.position;
+
         if (target == null)
         {
-            stateColor = Color.cyan;
+            Debug.DrawLine(transform.position, navMeshAgent.destination, Color.grey);
         }
         else
         {
-            NavMeshHit hit;
-            if (!navMeshAgent.Raycast(target.position, out hit))
-            {
-                Debug.DrawLine(transform.position, hit.position, Color.gray);
-            }
+            targetDistance = Vector3.Distance(transform.position, target.position);
+            Debug.DrawLine(transform.position, target.position, Color.white);
         }
-        Debug.DrawLine(transform.position, navMeshAgent.destination, stateColor);
+        Debug.DrawRay(transform.position, transform.TransformDirection(Vector3.forward), Color.red);
+        AnimateRunning();
+        if (navMeshAgent.remainingDistance < 4f && target != null)
+        {
+            LookAt(target.position);
+        }
     }
 
-    void FindTarget()
+    // Search for the closest player
+    void FindNewTarget()
     {
         GameObject closestPlayer = null;
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
@@ -103,24 +123,52 @@ public class EnemyScript : NetworkBehaviour
         }
     }
 
-    bool CheckVisibility(Vector3 target)
+    void LoseTarget()
     {
-        if (target != null)
+        if (target == null) return;
+        Vector3 targetTracker = target.position + target.forward;
+        target = null;
+        navMeshAgent.stoppingDistance = .5f;
+        navMeshAgent.SetDestination(targetTracker);
+
+    }
+
+    void LookAt(Vector3 targetPosition)
+    {
+        if (targetPosition == null) return;
+        Vector3 direction = (targetPosition - transform.position).normalized;
+        // direction.y = 0;
+        Quaternion _lookRotation = Quaternion.LookRotation(direction);
+        transform.rotation = Quaternion.Slerp(transform.rotation, _lookRotation, Time.deltaTime * turningSpeed);
+    }
+
+    void Shoot()
+    {
+        GameObject projectile = Instantiate(projectilePrefab, transform.position + Vector3.up, transform.rotation);
+        // Debug.Log(projectile.GetHashCode());
+        NetworkServer.Spawn(projectile);
+    }
+
+    // Check if target is visible
+    bool CheckVisibility(Vector3 targetPosition)
+    {
+        bool isVisible = false;
+        if (targetPosition != null)
         {
             RaycastHit hit;
-            Vector3 transformOffset = transform.position + new Vector3(0, 1f, 0);
-            targetDistance = Vector3.Distance(transform.position, target);
-            if (targetDistance < maxRange)
+            Vector3 targetDirection = targetPosition - transform.position;
+            float angle = Vector3.Angle(targetDirection, transform.forward);
+            if (angle < fieldOfView)
             {
-                if (Physics.Raycast(transformOffset, target - transformOffset, out hit, maxRange))
+                if (Physics.Raycast(transform.position, targetDirection, out hit, maxRange, ~enemyLayer))
                 {
                     if (hit.transform.tag == "Player")
                     {
-                        return true;
+                        isVisible = true;
                     }
                 }
             }
         }
-        return false;
+        return isVisible;
     }
 }

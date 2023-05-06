@@ -115,6 +115,12 @@ class PlayerScript : NetworkBehaviour
     foreach (var item in collision.contacts)
     {
       Debug.DrawRay(item.point, item.normal, Color.green, 1f);
+      Debug.Log(collision.transform.tag);
+      if (collision.transform.tag == "Enemy" && rb != null)
+      {
+        rb.AddForce((item.normal * 2 + Vector3.up).normalized * 2, ForceMode.Impulse);
+        return;
+      }
     }
   }
 
