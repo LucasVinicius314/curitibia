@@ -17,6 +17,12 @@ class PlayerScript : NetworkBehaviour
   float cameraContainerXRotation = 0f;
   [SerializeField]
   LayerMask g;
+  
+  Transform? legR;
+  Transform? legL;
+  Transform? root;
+  Transform? arms;
+  float animationRandomiser;
 
   bool CheckGroundContact()
   {
@@ -42,6 +48,18 @@ class PlayerScript : NetworkBehaviour
     // Debug.Log($"{a} {b}");
 
     return a && b;
+  }
+
+  void AnimateRunning()
+  {
+    if (legR == null || legL == null || root == null || arms == null|| rb == null) return;
+    float playerSpeed = new Vector3(rb.velocity.x, 0, rb.velocity.z).magnitude;
+    float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 10f);
+    legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(playerSpeed * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(playerSpeed * 40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
+    legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(playerSpeed * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(playerSpeed * -40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
+    root.localRotation = Quaternion.Euler(playerSpeed * 4, animationSin * playerSpeed * 6, 0);
+    arms.localRotation = Quaternion.Euler(0, -animationSin * playerSpeed * 24, 0);
+    Debug.Log(playerSpeed);
   }
 
   void Jump()
@@ -90,7 +108,14 @@ class PlayerScript : NetworkBehaviour
     rb = GetComponent<Rigidbody>();
     cameraContainer = transform.Find("CameraContainer");
 
+    root = transform.Find("Model/Root");
+    legR = transform.Find("Model/Root/Legs/Leg_R");
+    legL = transform.Find("Model/Root/Legs/Leg_L");
+    arms = transform.Find("Model/Root/Chest/Arms");
+
     cameraContainer.Find("Main Camera").GetComponent<Camera>().enabled = true;
+    
+    animationRandomiser = Random.Range(0, 50);
 
     if (inputActions != null)
     {
@@ -115,7 +140,6 @@ class PlayerScript : NetworkBehaviour
     foreach (var item in collision.contacts)
     {
       Debug.DrawRay(item.point, item.normal, Color.green, 1f);
-      Debug.Log(collision.transform.tag);
       if (collision.transform.tag == "Enemy" && rb != null)
       {
         rb.AddForce((item.normal * 2 + Vector3.up).normalized * 2, ForceMode.Impulse);
@@ -130,6 +154,8 @@ class PlayerScript : NetworkBehaviour
     {
       return;
     }
+
+    AnimateRunning();
 
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
 
