@@ -7,7 +7,7 @@ public class ProjectileScript : NetworkBehaviour
 {
     Rigidbody rb;
     LayerMask enemyLayer = 1 << 7;
-    bool applyForce = true;
+    
     // Start is called before the first frame update
     void Start()
     {
