@@ -12,8 +12,8 @@ public class PlayerAnimation : NetworkBehaviour
   Transform? root;
   Transform? chest;
   Transform? arms;
-  Vector2 horizontalVelocity;
-  Vector2 smoothedVelocity;
+  Vector3 horizontalVelocity;
+  Vector3 smoothedVelocity;
   float animationRandomiser;
 
   public override void OnStartLocalPlayer()
@@ -42,16 +42,28 @@ public class PlayerAnimation : NetworkBehaviour
     arms.localRotation = Quaternion.Euler(0, -animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 15, 0);
     if (rb.velocity.magnitude > 1f)
     {
-      horizontalVelocity = new Vector2(rb.velocity.x, rb.velocity.z);
+      horizontalVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+    }
+    smoothedVelocity = Vector3.Lerp(smoothedVelocity, horizontalVelocity, .05f);
+
+    Vector3 targetDirection = horizontalVelocity;
+    Vector3 playerDirection = smoothedVelocity;
+
+    float angle = Vector3.Angle(targetDirection, playerDirection);
+    if (Vector3.Angle(targetDirection, Quaternion.AngleAxis(90, Vector3.up) * playerDirection) < 90f)
+    {
+      angle *= -1;
     }
 
-    smoothedVelocity = Vector2.Lerp(smoothedVelocity, horizontalVelocity, .1f);
-    float desiredRotation = Mathf.Atan2(horizontalVelocity.x, horizontalVelocity.y) * Mathf.Rad2Deg;
-    float angleDifference = (root.rotation.eulerAngles.y - desiredRotation);
-    root.rotation = Quaternion.Euler(new Vector3(playerSpeed*4, Mathf.Atan2(smoothedVelocity.x, smoothedVelocity.y) * Mathf.Rad2Deg, angleDifference));
-    chest.localRotation = Quaternion.Euler(0 , animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, 0);
 
-    Debug.Log(root.rotation.eulerAngles.y + " - " + desiredRotation + " = " + angleDifference);
+    root.rotation = Quaternion.Euler(new Vector3(playerSpeed * 4, Mathf.Atan2(smoothedVelocity.x, smoothedVelocity.z) * Mathf.Rad2Deg, Mathf.Clamp(angle, -35, 35f)));
+    chest.localRotation = Quaternion.Euler(0, animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, 0);
+
+    Debug.Log(root.rotation.eulerAngles.y);
+    Debug.DrawLine(root.position, targetDirection + root.position, Color.red);
+    Debug.DrawLine(root.position, playerDirection + root.position, Color.green);
+    Debug.DrawLine(root.position, Quaternion.AngleAxis(90, Vector3.up) * playerDirection + root.position, Color.blue);
+
   }
 
   void animateJump()
