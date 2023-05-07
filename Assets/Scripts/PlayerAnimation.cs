@@ -12,7 +12,7 @@ public class PlayerAnimation : NetworkBehaviour
   Transform? root;
   Transform? chest;
   Transform? arms;
-  Vector2 c;
+  Vector2 horizontalVelocity;
   Vector2 smoothedVelocity;
   float animationRandomiser;
 
@@ -39,14 +39,25 @@ public class PlayerAnimation : NetworkBehaviour
     float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 15f);
     legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(playerSpeed * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(playerSpeed * 40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
     legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(playerSpeed * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(playerSpeed * -40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
-    chest.localRotation = Quaternion.Euler(playerSpeed * 4, animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, 0);
     arms.localRotation = Quaternion.Euler(0, -animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 15, 0);
-    if (rb.velocity.magnitude > .5f)
+    if (rb.velocity.magnitude > 1f)
     {
-      c = new Vector2(rb.velocity.x, rb.velocity.z);
+      horizontalVelocity = new Vector2(rb.velocity.x, rb.velocity.z);
     }
-    smoothedVelocity = Vector2.Lerp(smoothedVelocity, c, .04f);
+
+    smoothedVelocity = Vector2.Lerp(smoothedVelocity, horizontalVelocity, .1f);
     root.rotation = Quaternion.Euler(Vector3.up * Mathf.Atan2(smoothedVelocity.x, smoothedVelocity.y) * Mathf.Rad2Deg);
-    Debug.Log(playerSpeed);
+    float desiredRotation = Mathf.Atan2(horizontalVelocity.x, horizontalVelocity.y) * Mathf.Rad2Deg;
+    float angleDifference = (root.rotation.eulerAngles.y - desiredRotation) * 4;
+    
+    chest.localRotation = Quaternion.Euler(playerSpeed * 4, animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, angleDifference);
+
+    Debug.Log(desiredRotation + " " + root.rotation.eulerAngles.y);
+    // float angleDifference = Mathf.Atan2(horizontalVelocity.y - smoothedVelocity.y, horizontalVelocity.x - smoothedVelocity.x) * Mathf.Rad2Deg;
+  }
+
+  void animateJump()
+  {
+
   }
 }
