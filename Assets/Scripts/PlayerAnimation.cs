@@ -46,14 +46,12 @@ public class PlayerAnimation : NetworkBehaviour
     }
 
     smoothedVelocity = Vector2.Lerp(smoothedVelocity, horizontalVelocity, .1f);
-    root.rotation = Quaternion.Euler(Vector3.up * Mathf.Atan2(smoothedVelocity.x, smoothedVelocity.y) * Mathf.Rad2Deg);
     float desiredRotation = Mathf.Atan2(horizontalVelocity.x, horizontalVelocity.y) * Mathf.Rad2Deg;
-    float angleDifference = (root.rotation.eulerAngles.y - desiredRotation) * 4;
-    
-    chest.localRotation = Quaternion.Euler(playerSpeed * 4, animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, angleDifference);
+    float angleDifference = (root.rotation.eulerAngles.y - desiredRotation);
+    root.rotation = Quaternion.Euler(new Vector3(playerSpeed*4, Mathf.Atan2(smoothedVelocity.x, smoothedVelocity.y) * Mathf.Rad2Deg, angleDifference));
+    chest.localRotation = Quaternion.Euler(0 , animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, 0);
 
-    Debug.Log(desiredRotation + " " + root.rotation.eulerAngles.y);
-    // float angleDifference = Mathf.Atan2(horizontalVelocity.y - smoothedVelocity.y, horizontalVelocity.x - smoothedVelocity.x) * Mathf.Rad2Deg;
+    Debug.Log(root.rotation.eulerAngles.y + " - " + desiredRotation + " = " + angleDifference);
   }
 
   void animateJump()
