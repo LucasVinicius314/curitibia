@@ -9,18 +9,21 @@ class PlayerScript : NetworkBehaviour
   [SerializeField]
   InputActionAsset? inputActions;
   InputAction? lookAction;
+  Vector2 c;
   Vector2 movementInput;
   Vector2 smoothedMovementInput;
+  Vector2 smoothedVelocity;
   Vector2 lookInput;
   Rigidbody? rb;
   Transform? cameraContainer;
   float cameraContainerXRotation = 0f;
   [SerializeField]
   LayerMask g;
-  
+
   Transform? legR;
   Transform? legL;
   Transform? root;
+  Transform? chest;
   Transform? arms;
   float animationRandomiser;
 
@@ -52,13 +55,19 @@ class PlayerScript : NetworkBehaviour
 
   void AnimateRunning()
   {
-    if (legR == null || legL == null || root == null || arms == null|| rb == null) return;
+    if (legR == null || legL == null || root == null || arms == null || rb == null || chest == null) return;
     float playerSpeed = new Vector3(rb.velocity.x, 0, rb.velocity.z).magnitude;
-    float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 10f);
+    float animationSin = Mathf.Sin((Time.time + animationRandomiser) * 15f);
     legR.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(playerSpeed * -40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(playerSpeed * 40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
     legL.localRotation = Quaternion.Slerp(Quaternion.Euler(Mathf.Clamp(playerSpeed * 40f, -60, 60), 0, 0), Quaternion.Euler(Mathf.Clamp(playerSpeed * -40f, -60, 60), 0, 0), (animationSin + 1f) / 2f);
-    root.localRotation = Quaternion.Euler(playerSpeed * 4, animationSin * playerSpeed * 6, 0);
-    arms.localRotation = Quaternion.Euler(0, -animationSin * playerSpeed * 24, 0);
+    chest.localRotation = Quaternion.Euler(playerSpeed * 4, animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 4, 0);
+    arms.localRotation = Quaternion.Euler(0, -animationSin * Mathf.Clamp(playerSpeed, 0, 3) * 15, 0);
+    if (rb.velocity.magnitude > .5f)
+    {
+      c = new Vector2(rb.velocity.x, rb.velocity.z);
+    }
+    smoothedVelocity = Vector2.Lerp(smoothedVelocity, c, .04f);
+    root.rotation = Quaternion.Euler(Vector3.up * Mathf.Atan2(smoothedVelocity.x, smoothedVelocity.y) * Mathf.Rad2Deg);
     Debug.Log(playerSpeed);
   }
 
@@ -112,9 +121,10 @@ class PlayerScript : NetworkBehaviour
     legR = transform.Find("Model/Root/Legs/Leg_R");
     legL = transform.Find("Model/Root/Legs/Leg_L");
     arms = transform.Find("Model/Root/Chest/Arms");
+    chest = transform.Find("Model/Root/Chest");
 
     cameraContainer.Find("Main Camera").GetComponent<Camera>().enabled = true;
-    
+
     animationRandomiser = Random.Range(0, 50);
 
     if (inputActions != null)
@@ -163,7 +173,7 @@ class PlayerScript : NetworkBehaviour
 
     if (CheckGroundContact())
     {
-      rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 3f + Vector3.up * rb.velocity.y;
+      rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 5f + Vector3.up * rb.velocity.y;
     }
   }
 
