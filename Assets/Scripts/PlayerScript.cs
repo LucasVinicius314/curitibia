@@ -17,6 +17,7 @@ class PlayerScript : NetworkBehaviour
   float cameraContainerXRotation = 0f;
   [SerializeField]
   LayerMask g;
+  public bool grounded;
 
 
   bool CheckGroundContact()
@@ -131,6 +132,8 @@ class PlayerScript : NetworkBehaviour
       return;
     }
 
+    grounded = Physics.Raycast(transform.position, Vector3.down, 2 * 0.5f + 0.2f);
+    Debug.DrawLine(transform.position, Vector3.down);
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
 
     var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;

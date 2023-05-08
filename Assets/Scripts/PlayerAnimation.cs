@@ -9,15 +9,17 @@ public class PlayerAnimation : NetworkBehaviour
   Rigidbody? rb;
   Transform? legR;
   Transform? legL;
+  Transform? arms;
   Transform? root;
   Transform? chest;
-  Transform? arms;
+  PlayerScript? playerScript;
   Vector3 horizontalVelocity;
   Vector3 smoothedVelocity;
   float animationRandomiser;
 
   public override void OnStartLocalPlayer()
   {
+    playerScript = GetComponent<PlayerScript>();
     rb = GetComponent<Rigidbody>();
     root = transform.Find("Model/Root");
     legR = transform.Find("Model/Root/Legs/Leg_R");
@@ -29,7 +31,11 @@ public class PlayerAnimation : NetworkBehaviour
 
   void Update()
   {
+    if (!isLocalPlayer) return;
+    if (playerScript == null) return;
+
     AnimateRunning();
+
   }
 
   void AnimateRunning()
