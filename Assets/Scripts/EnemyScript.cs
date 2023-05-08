@@ -77,7 +77,7 @@ public class EnemyScript : NetworkBehaviour
 
   void Update()
   {
-    if (navMeshAgent == null) return;
+    if (!isServer || navMeshAgent == null) return;
     speedPerSec = Vector3.Distance(oldPosition, transform.position) / Time.deltaTime;
     speed = Vector3.Distance(oldPosition, transform.position);
     oldPosition = transform.position;
