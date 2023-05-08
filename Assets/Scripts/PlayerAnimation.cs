@@ -38,7 +38,7 @@ public class PlayerAnimation : NetworkBehaviour
 
   void Update()
   {
-    if (isLocalPlayer && rb != null) UpdateVelocity(rb.velocity);
+    if (isLocalPlayer && rb != null) SendVelocity(rb.velocity);
     AnimateRunning();
   }
 
@@ -80,14 +80,14 @@ public class PlayerAnimation : NetworkBehaviour
   }
 
   [Command]
-  public void UpdateVelocity(Vector3 velocity)
+  public void SendVelocity(Vector3 velocity)
   {
     rbVelocity = velocity;
-    Rpc(rbVelocity);
+    PropagateVelocity(rbVelocity);
   }
 
   [ClientRpc]
-  public void Rpc(Vector3 velocity)
+  public void PropagateVelocity(Vector3 velocity)
   {
     rbVelocity = velocity;
   }
