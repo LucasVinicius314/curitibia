@@ -93,6 +93,7 @@ class PlayerScript : NetworkBehaviour
     cameraContainer = transform.Find("CameraContainer");
 
     cameraContainer.Find("Main Camera").GetComponent<Camera>().enabled = true;
+    cameraContainer.Find("Main Camera").GetComponent<AudioListener>().enabled = true;
 
     if (inputActions != null)
     {
@@ -127,12 +128,12 @@ class PlayerScript : NetworkBehaviour
 
   void Update()
   {
+    grounded = Physics.Raycast(transform.position, Vector3.down, 2 * 0.5f + 0.2f);
     if (!isLocalPlayer || rb == null)
     {
       return;
     }
 
-    grounded = Physics.Raycast(transform.position, Vector3.down, 2 * 0.5f + 0.2f);
     Debug.DrawLine(transform.position, Vector3.down);
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
 
