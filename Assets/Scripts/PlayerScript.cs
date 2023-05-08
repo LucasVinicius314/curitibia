@@ -17,6 +17,8 @@ class PlayerScript : NetworkBehaviour
   float cameraContainerXRotation = 0f;
   [SerializeField]
   LayerMask g;
+  public bool grounded;
+
 
   bool CheckGroundContact()
   {
@@ -91,6 +93,7 @@ class PlayerScript : NetworkBehaviour
     cameraContainer = transform.Find("CameraContainer");
 
     cameraContainer.Find("Main Camera").GetComponent<Camera>().enabled = true;
+    cameraContainer.Find("Main Camera").GetComponent<AudioListener>().enabled = true;
 
     if (inputActions != null)
     {
@@ -115,7 +118,6 @@ class PlayerScript : NetworkBehaviour
     foreach (var item in collision.contacts)
     {
       Debug.DrawRay(item.point, item.normal, Color.green, 1f);
-      Debug.Log(collision.transform.tag);
       if (collision.transform.tag == "Enemy" && rb != null)
       {
         rb.AddForce((item.normal * 2 + Vector3.up).normalized * 2, ForceMode.Impulse);
@@ -126,18 +128,20 @@ class PlayerScript : NetworkBehaviour
 
   void Update()
   {
+    grounded = Physics.Raycast(transform.position, Vector3.down, 2 * 0.5f + 0.2f);
     if (!isLocalPlayer || rb == null)
     {
       return;
     }
 
+    Debug.DrawLine(transform.position, Vector3.down);
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
 
     var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;
 
     if (CheckGroundContact())
     {
-      rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 3f + Vector3.up * rb.velocity.y;
+      rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 5f + Vector3.up * rb.velocity.y;
     }
   }
 
