@@ -16,7 +16,7 @@ public enum Orientation
 public class ChunkScript : MonoBehaviour
 {
   public static int width = 32;
-  public static int height = 8;
+  public static int height = 32;
   public static int depth = 32;
 
   public (int, int) chunkCoordinate;
@@ -92,9 +92,31 @@ public class ChunkScript : MonoBehaviour
       }
     }
 
-    mesh.vertices = vertices;
-    mesh.triangles = triangles;
-    mesh.uv = uv;
+
+    var newUv = new Vector2[vc];
+
+    for (int i = 0; i < vc; i++)
+    {
+      newUv[i] = uv[i];
+    }
+
+    var newTriangles = new int[tc];
+
+    for (int i = 0; i < tc; i++)
+    {
+      newTriangles[i] = triangles[i];
+    }
+
+    var newVertices = new Vector3[vc];
+
+    for (int i = 0; i < vc; i++)
+    {
+      newVertices[i] = vertices[i];
+    }
+
+    mesh.vertices = newVertices;
+    mesh.triangles = newTriangles;
+    mesh.uv = newUv;
 
     mesh.RecalculateNormals();
 
@@ -105,24 +127,33 @@ public class ChunkScript : MonoBehaviour
     }
   }
 
-  bool[,,] GenerateTerrainMap(Vector3 dimensions)
+  public void GenerateTerrainMap(float seed)
   {
-    var terrainMap = new bool[width, height, depth];
+    var weight = .04f;
+    var amplitude = 10f;
+
+    var dimensions = new Vector3(width, height, depth);
+
+    var newTerrainMap = new bool[width, height, depth];
 
     for (int x = 0; x < width; x++)
     {
+      var tX = (x + chunkCoordinate.Item1 * width + seed) * weight;
+
       for (int z = 0; z < depth; z++)
       {
-        var targetHeight = Mathf.PerlinNoise(x / 7f, z / 7f) * 4f + height / 2;
+        var tZ = (z + chunkCoordinate.Item2 * depth + seed) * weight;
+
+        var targetHeight = Mathf.PerlinNoise(tX, tZ) * amplitude + height / 2;
 
         for (int y = 0; y < targetHeight; y++)
         {
-          terrainMap[x, y, z] = true;
+          newTerrainMap[x, y, z] = true;
         }
       }
     }
 
-    return terrainMap;
+    terrainMap = newTerrainMap;
   }
 
   public bool HasBlock(int x, int y, int z)
@@ -199,7 +230,5 @@ public class ChunkScript : MonoBehaviour
 
     meshCollider = GetComponent<MeshCollider>();
     meshFilter = GetComponent<MeshFilter>();
-
-    terrainMap = GenerateTerrainMap(new Vector3(width, height, depth));
   }
 }

@@ -18,7 +18,9 @@ public class TerrainScript : MonoBehaviour
 
   void BuildTerrain()
   {
-    var material = (Material)Utils.LoadPrefabFromFile("Materials/DefaultMat");
+    var seed = UnityEngine.Random.value * 5000f;
+
+    var material = (Material)Utils.LoadPrefabFromFile("Materials/GrassMat");
 
     for (int x = -size + 1; x < size; x++)
     {
@@ -30,6 +32,7 @@ public class TerrainScript : MonoBehaviour
 
         chunkScript.terrainScript = this;
         chunkScript.chunkCoordinate = (x, z);
+        chunkScript.GenerateTerrainMap(seed);
         chunkMap.Add((x, z), chunkScript);
 
         chunk.GetComponent<MeshRenderer>().material = material;
