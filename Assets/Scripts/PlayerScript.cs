@@ -12,6 +12,7 @@ class PlayerScript : NetworkBehaviour
   Vector2 movementInput;
   Vector2 smoothedMovementInput;
   Vector2 lookInput;
+  Vector3 playerDirection;
   Rigidbody? rb;
   Transform? cameraContainer;
   float cameraContainerXRotation = 0f;
@@ -133,6 +134,7 @@ class PlayerScript : NetworkBehaviour
     {
       return;
     }
+    StepClimb();
 
     Debug.DrawLine(transform.position, Vector3.down);
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
@@ -140,6 +142,10 @@ class PlayerScript : NetworkBehaviour
     var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;
 
     if (CheckGroundContact())
+    {
+      rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 5f + Vector3.up * rb.velocity.y;
+    }
+    else
     {
       rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 5f + Vector3.up * rb.velocity.y;
     }
@@ -164,5 +170,41 @@ class PlayerScript : NetworkBehaviour
     }
 
     transform.Rotate(Vector3.up, lookInput.x * Time.deltaTime * sensitivity);
+  }
+
+  void StepClimb()
+  {
+    if (rb == null) return;
+    float stepSmooth = 6f;
+    float stepHeight = 1f;
+    float playerRadious = 0.3f;
+    Vector3 lower = transform.position + playerDirection * playerRadious + Vector3.down * 0.89f;
+    Vector3 upper = lower + Vector3.up * stepHeight;
+    bool _lower = false;
+    bool _upper = false;
+    if (new Vector2(rb.velocity.x, rb.velocity.z).magnitude >= 1f)
+    {
+      playerDirection = new Vector3(rb.velocity.x, 0, rb.velocity.z).normalized;
+    }
+
+    RaycastHit hitLower;
+    if (Physics.Raycast(lower, playerDirection, out hitLower, 0.4f))
+    {
+      RaycastHit hitUpper;
+      _lower = true;
+      if (!Physics.Raycast(upper, playerDirection, out hitUpper, 0.6f))
+      {
+        rb.useGravity = false;
+        rb.position -= new Vector3(0f, -stepSmooth * Time.deltaTime, 0f);
+        rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+      }
+      else _upper = true;
+    }
+    else rb.useGravity = true;
+
+
+    Debug.DrawLine(transform.position, transform.position + playerDirection);
+    Debug.DrawLine(lower, lower + playerDirection * 0.4f, _lower ? Color.green : Color.magenta);
+    Debug.DrawLine(upper, upper + playerDirection * 0.6f, _upper ? Color.green : Color.magenta);
   }
 }
