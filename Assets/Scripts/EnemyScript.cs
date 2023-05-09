@@ -28,7 +28,7 @@ public class EnemyScript : NetworkBehaviour
 
   void Start()
   {
-    projectilePrefab = Utils.LoadPrefabFromFile("Prefabs/Projectile");
+    projectilePrefab = (GameObject)Utils.LoadPrefabFromFile("Prefabs/Projectile");
     navMeshAgent = GetComponent<NavMeshAgent>();
     root = transform.Find("Amogos/Root");
     legR = transform.Find("Amogos/Root/Legs/Leg_R");

@@ -1,191 +1,92 @@
+using System;
+using System.Collections.Generic;
 using Unity.AI.Navigation;
 using UnityEngine;
 
 #nullable enable
 
-enum Orientation
-{
-  up,
-  down,
-  north,
-  south,
-  east,
-  west,
-}
-
-[RequireComponent(typeof(MeshCollider), typeof(MeshFilter), typeof(MeshRenderer))]
+[RequireComponent(typeof(NavMeshSurface))]
 public class TerrainScript : MonoBehaviour
 {
-  Mesh? mesh;
-  MeshCollider? meshCollider;
-  MeshFilter? meshFilter;
+  [SerializeField]
+  [Range(1, 32)]
+  int size = 3;
 
-  void CreateMesh(Mesh mesh, bool[,,] terrainMap)
+  NavMeshSurface? navMeshSurface;
+
+  Dictionary<(int, int), ChunkScript> chunkMap = new Dictionary<(int, int), ChunkScript>();
+
+  void BuildTerrain()
   {
-    mesh.Clear();
+    var seed = UnityEngine.Random.value * 5000f;
 
-    var offset = new Vector3 { x = -16f, y = -22.5f, z = -16f };
+    var material = (Material)Utils.LoadPrefabFromFile("Materials/GrassMat");
 
-    var right = terrainMap.GetLength(0);
-    var up = terrainMap.GetLength(1);
-    var forward = terrainMap.GetLength(2);
-
-    var uv = new Vector2[4 * 6 * right * up * forward];
-    var triangles = new int[6 * 6 * right * up * forward];
-    var vertices = new Vector3[4 * 6 * right * up * forward];
-
-    var vc = 0;
-    var tc = 0;
-
-    for (int x = 0; x < right; x++)
+    for (int x = -size + 1; x < size; x++)
     {
-      for (int y = 0; y < up; y++)
+      for (int z = -size + 1; z < size; z++)
       {
-        for (int z = 0; z < forward; z++)
+        var chunk = new GameObject("Chunk");
+
+        var chunkScript = chunk.AddComponent<ChunkScript>();
+
+        chunkScript.terrainScript = this;
+        chunkScript.chunkCoordinate = (x, z);
+        chunkScript.GenerateTerrainMap(seed);
+        chunkMap.Add((x, z), chunkScript);
+
+        chunk.GetComponent<MeshRenderer>().material = material;
+        chunk.transform.SetParent(transform);
+        chunk.transform.position = new Vector3
         {
-          if (terrainMap[x, y, z])
-          {
-            if (x == 0 || !terrainMap[x - 1, y, z])
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.west);
-            }
-            if (x == right - 1 || !terrainMap[x + 1, y, z])
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.east);
-            }
-            if (y == 0 || !terrainMap[x, y - 1, z])
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.down);
-            }
-            if (y == up - 1 || !terrainMap[x, y + 1, z])
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.up);
-            }
-            if (z == 0 || !terrainMap[x, y, z - 1])
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.south);
-            }
-            if (z == forward - 1 || !terrainMap[x, y, z + 1])
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.north);
-            }
-          }
-        }
+          x = x * ChunkScript.width,
+          z = z * ChunkScript.depth,
+        };
       }
-    }
-
-    mesh.vertices = vertices;
-    mesh.triangles = triangles;
-    mesh.uv = uv;
-
-    mesh.RecalculateNormals();
-
-    if (meshCollider != null && meshFilter != null)
-    {
-      meshCollider.sharedMesh = mesh;
-      meshFilter.mesh = mesh;
     }
   }
 
-  bool[,,] GenerateTerrainMap(Vector3 dimensions)
+  public ChunkScript? GetNeighbourChunk((int, int) coordinates, Orientation orientation)
   {
-    const int width = 32;
-    const int height = 32;
-    const int depth = 32;
+    var tempX = coordinates.Item1;
+    var tempZ = coordinates.Item2;
 
-    var terrainMap = new bool[width, height, depth];
-
-    for (int x = 0; x < width; x++)
-    {
-      for (int z = 0; z < depth; z++)
-      {
-        var targetHeight = Mathf.PerlinNoise(x / 7f, z / 7f) * 8f + height / 2;
-
-        for (int y = 0; y < targetHeight; y++)
-        {
-          terrainMap[x, y, z] = true;
-        }
-      }
-    }
-
-    return terrainMap;
-  }
-
-  void RenderQuad(Vector3[] vertices, int[] triangles, Vector2[] uv, ref int vc, ref int tc, int x, int y, int z, Vector3 offset, Orientation orientation)
-  {
     switch (orientation)
     {
       case Orientation.up:
-        vertices[vc] = new Vector3(x, y + 1, z) + offset;
-        vertices[vc + 1] = new Vector3(x, y + 1, z + 1) + offset;
-        vertices[vc + 2] = new Vector3(x + 1, y + 1, z) + offset;
-        vertices[vc + 3] = new Vector3(x + 1, y + 1, z + 1) + offset;
-        break;
       case Orientation.down:
-        vertices[vc] = new Vector3(x, y, z) + offset;
-        vertices[vc + 1] = new Vector3(x + 1, y, z) + offset;
-        vertices[vc + 2] = new Vector3(x, y, z + 1) + offset;
-        vertices[vc + 3] = new Vector3(x + 1, y, z + 1) + offset;
-        break;
-      case Orientation.north:
-        vertices[vc] = new Vector3(x + 1, y, z + 1) + offset;
-        vertices[vc + 1] = new Vector3(x + 1, y + 1, z + 1) + offset;
-        vertices[vc + 2] = new Vector3(x, y, z + 1) + offset;
-        vertices[vc + 3] = new Vector3(x, y + 1, z + 1) + offset;
-        break;
-      case Orientation.south:
-        vertices[vc] = new Vector3(x, y, z) + offset;
-        vertices[vc + 1] = new Vector3(x, y + 1, z) + offset;
-        vertices[vc + 2] = new Vector3(x + 1, y, z) + offset;
-        vertices[vc + 3] = new Vector3(x + 1, y + 1, z) + offset;
-        break;
+        throw new ArgumentException("Invalid orientation.");
       case Orientation.east:
-        vertices[vc] = new Vector3(x + 1, y, z) + offset;
-        vertices[vc + 1] = new Vector3(x + 1, y + 1, z) + offset;
-        vertices[vc + 2] = new Vector3(x + 1, y, z + 1) + offset;
-        vertices[vc + 3] = new Vector3(x + 1, y + 1, z + 1) + offset;
+        tempX++;
         break;
       case Orientation.west:
-        vertices[vc] = new Vector3(x, y, z) + offset;
-        vertices[vc + 1] = new Vector3(x, y, z + 1) + offset;
-        vertices[vc + 2] = new Vector3(x, y + 1, z) + offset;
-        vertices[vc + 3] = new Vector3(x, y + 1, z + 1) + offset;
+        tempX--;
+        break;
+      case Orientation.north:
+        tempZ++;
+        break;
+      case Orientation.south:
+        tempZ--;
         break;
     }
 
-    uv[vc] = new Vector2(0, 0);
-    uv[vc + 1] = new Vector2(0, 1);
-    uv[vc + 2] = new Vector2(1, 0);
-    uv[vc + 3] = new Vector2(1, 1);
-
-    triangles[tc] = vc;
-    triangles[tc + 1] = vc + 1;
-    triangles[tc + 2] = vc + 2;
-    triangles[tc + 3] = vc + 2;
-    triangles[tc + 4] = vc + 1;
-    triangles[tc + 5] = vc + 3;
-
-    vc += 4;
-    tc += 6;
+    return chunkMap.GetValueOrDefault((tempX, tempZ));
   }
 
   void Awake()
   {
-    mesh = new Mesh();
-
-    meshCollider = GetComponent<MeshCollider>();
-    meshFilter = GetComponent<MeshFilter>();
+    navMeshSurface = GetComponent<NavMeshSurface>();
   }
 
   void Start()
   {
-    if (mesh != null)
-    {
-      var terrainMap = GenerateTerrainMap(new Vector3(32, 32, 32));
+    BuildTerrain();
 
-      CreateMesh(mesh, terrainMap);
+    foreach (var chunk in chunkMap.Values)
+    {
+      chunk.CreateMesh();
     }
 
-    GetComponent<NavMeshSurface>().BuildNavMesh();
+    navMeshSurface?.BuildNavMesh();
   }
 }
