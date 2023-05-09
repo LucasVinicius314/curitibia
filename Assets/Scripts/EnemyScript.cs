@@ -77,7 +77,8 @@ public class EnemyScript : NetworkBehaviour
 
   void Update()
   {
-    if (navMeshAgent == null) return;
+    AnimateRunning();
+    if (!isServer || navMeshAgent == null) return;
     speedPerSec = Vector3.Distance(oldPosition, transform.position) / Time.deltaTime;
     speed = Vector3.Distance(oldPosition, transform.position);
     oldPosition = transform.position;
@@ -89,10 +90,9 @@ public class EnemyScript : NetworkBehaviour
     else
     {
       targetDistance = Vector3.Distance(transform.position, target.position);
-      Debug.DrawLine(transform.position, target.position, Color.white);
+      // Debug.DrawLine(transform.position, target.position, Color.white);
     }
     Debug.DrawRay(transform.position, transform.TransformDirection(Vector3.forward), Color.red);
-    AnimateRunning();
     if (navMeshAgent.remainingDistance < 4f && target != null)
     {
       LookAt(target.position);
