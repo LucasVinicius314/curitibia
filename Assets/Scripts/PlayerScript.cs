@@ -136,7 +136,6 @@ class PlayerScript : NetworkBehaviour
     }
     StepClimb();
 
-    Debug.DrawLine(transform.position, Vector3.down);
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
 
     var vector = transform.right * smoothedMovementInput.x + transform.forward * smoothedMovementInput.y;
@@ -175,11 +174,20 @@ class PlayerScript : NetworkBehaviour
   void StepClimb()
   {
     if (rb == null) return;
-    float stepSmooth = 6f;
+    if (movementInput.magnitude == 0) return;
+    float stepSpeed = 12f;
     float stepHeight = 1f;
     float playerRadious = 0.3f;
+    float detectionAngle = 90f;
+    Quaternion rightOffset = Quaternion.AngleAxis(detectionAngle / 2, Vector3.up);
+    Quaternion leftOffset = Quaternion.AngleAxis(-detectionAngle / 2, Vector3.up);
     Vector3 lower = transform.position + playerDirection * playerRadious + Vector3.down * 0.89f;
+    Vector3 rLower = transform.position + rightOffset * playerDirection * playerRadious + Vector3.down * 0.89f;
+    Vector3 lLower = transform.position + leftOffset * playerDirection * playerRadious + Vector3.down * 0.89f;
     Vector3 upper = lower + Vector3.up * stepHeight;
+    Vector3 rUpper = rLower + Vector3.up * stepHeight;
+    Vector3 lUpper = lLower + Vector3.up * stepHeight;
+
     bool _lower = false;
     bool _upper = false;
     if (new Vector2(rb.velocity.x, rb.velocity.z).magnitude >= 1f)
@@ -187,6 +195,7 @@ class PlayerScript : NetworkBehaviour
       playerDirection = new Vector3(rb.velocity.x, 0, rb.velocity.z).normalized;
     }
 
+    // Check if there is a wall in front of the player
     RaycastHit hitLower;
     if (Physics.Raycast(lower, playerDirection, out hitLower, 0.4f))
     {
@@ -195,15 +204,56 @@ class PlayerScript : NetworkBehaviour
       if (!Physics.Raycast(upper, playerDirection, out hitUpper, 0.6f))
       {
         rb.useGravity = false;
-        rb.position -= new Vector3(0f, -stepSmooth * Time.deltaTime, 0f);
+        rb.position -= new Vector3(0f, -stepSpeed * Time.deltaTime, 0f);
         rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
       }
       else _upper = true;
     }
-    else rb.useGravity = true;
 
+    // Check if there is a wall on the right diagonal
+    else if (Physics.Raycast(rLower, rightOffset * playerDirection, out hitLower, 0.4f))
+    {
+      RaycastHit hitUpper;
+      _lower = true;
+      if (!Physics.Raycast(rUpper, rightOffset * playerDirection, out hitUpper, 0.6f))
+      {
+        rb.useGravity = false;
+        rb.position -= new Vector3(0f, -stepSpeed * Time.deltaTime, 0f);
+        rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+      }
+      else _upper = true;
+    }
 
-    Debug.DrawLine(transform.position, transform.position + playerDirection);
+    // Check if there is a wall on the left diagonal
+    else if (Physics.Raycast(lLower, leftOffset * playerDirection, out hitLower, 0.4f))
+    {
+      RaycastHit hitUpper;
+      _lower = true;
+      if (!Physics.Raycast(lUpper, leftOffset * playerDirection, out hitUpper, 0.6f))
+      {
+        rb.useGravity = false;
+        rb.position -= new Vector3(0f, -stepSpeed * Time.deltaTime, 0f);
+        rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+      }
+      else _upper = true;
+    }
+
+    // Turn gravity back on if player is not climbing a step
+    if (!_lower || _upper)
+    {
+      rb.useGravity = true;
+      return;
+    }
+
+    // Draw left
+    Debug.DrawLine(lLower, lLower + leftOffset * playerDirection * 0.4f, _lower ? Color.green : Color.magenta);
+    Debug.DrawLine(lUpper, lUpper + leftOffset * playerDirection * 0.6f, _upper ? Color.green : Color.magenta);
+
+    // Draw right
+    Debug.DrawLine(rLower, rLower + rightOffset * playerDirection * 0.4f, _lower ? Color.green : Color.magenta);
+    Debug.DrawLine(rUpper, rUpper + rightOffset * playerDirection * 0.6f, _upper ? Color.green : Color.magenta);
+
+    // Draw middle
     Debug.DrawLine(lower, lower + playerDirection * 0.4f, _lower ? Color.green : Color.magenta);
     Debug.DrawLine(upper, upper + playerDirection * 0.6f, _upper ? Color.green : Color.magenta);
   }
