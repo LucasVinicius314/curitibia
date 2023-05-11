@@ -20,7 +20,7 @@ public class TerrainScript : MonoBehaviour
   {
     var seed = UnityEngine.Random.value * 5000f;
 
-    var material = (Material)Utils.LoadPrefabFromFile("Materials/GrassMat");
+    var material = Materials.grass;
 
     for (int x = -size + 1; x < size; x++)
     {
