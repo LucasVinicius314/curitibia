@@ -67,8 +67,12 @@ public class EnemyScript : NetworkBehaviour
       {
         if (CheckVisibility(target.position) || targetDistance < escapeDistance || Time.time - lastSeen < escapeTime)
         {
-          navMeshAgent.stoppingDistance = stoppingDistance;
-          navMeshAgent.SetDestination(target.position);
+          if (navMeshAgent.enabled == true)
+          {
+            CalculateNewPath(target.position);
+            navMeshAgent.stoppingDistance = stoppingDistance;
+            navMeshAgent.SetDestination(target.position);
+          }
         }
         else
         {
@@ -184,17 +188,26 @@ public class EnemyScript : NetworkBehaviour
     return targetVisible = false;
   }
 
+
+  // Calculates a new path to the target and returns true if it is reachable
   bool CalculateNewPath(Vector3 targetPosition)
   {
-    if (navMeshAgent == null || target == null || navMeshPath == null) return false;
+    if (navMeshAgent == null || target == null || navMeshPath == null)
+    {
+      pathAvailable = false;
+      return false;
+    }
+
     navMeshAgent.CalculatePath(targetPosition, navMeshPath);
     if (navMeshPath.status != NavMeshPathStatus.PathComplete)
     {
-      return false;
+      pathAvailable = false;
+      return pathAvailable;
     }
     else
     {
-      return true;
+      pathAvailable = true;
+      return pathAvailable;
     }
   }
 
