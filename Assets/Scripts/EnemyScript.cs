@@ -154,8 +154,8 @@ public class EnemyScript : NetworkBehaviour
     if (targetPosition == null) return;
     Vector3 direction = (targetPosition - transform.position).normalized;
     // direction.y = 0;
-    Quaternion _lookRotation = Quaternion.LookRotation(direction);
-    transform.rotation = Quaternion.Slerp(transform.rotation, _lookRotation, Time.deltaTime * turningSpeed);
+    Quaternion lookRotation = Quaternion.LookRotation(direction);
+    transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * turningSpeed);
   }
 
   void Shoot()
@@ -180,12 +180,14 @@ public class EnemyScript : NetworkBehaviour
           if (hit.transform.tag == "Player")
           {
             lastSeen = Time.time;
-            return targetVisible = true;
+            targetVisible = true;
+            return targetVisible;
           }
         }
       }
     }
-    return targetVisible = false;
+    targetVisible = false;
+    return targetVisible;
   }
 
 
