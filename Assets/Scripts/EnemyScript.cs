@@ -90,9 +90,8 @@ public class EnemyScript : NetworkBehaviour
     else
     {
       targetDistance = Vector3.Distance(transform.position, target.position);
-      // Debug.DrawLine(transform.position, target.position, Color.white);
+      Debug.DrawLine(transform.position, target.position, Color.white);
     }
-    Debug.DrawRay(transform.position, transform.TransformDirection(Vector3.forward), Color.red);
     if (navMeshAgent.remainingDistance < 4f && target != null)
     {
       LookAt(target.position);
