@@ -5,15 +5,15 @@ using System.IO;
 
 class Utils
 {
-  public static Object LoadPrefabFromFile(string filename)
+  public static Object LoadPrefabFromFile(string fileName)
   {
-    Debug.Log("Trying to load LevelPrefab from file (" + filename + ")...");
+    Debug.Log($"Loading {fileName}.");
 
-    var loadedObject = Resources.Load(filename);
+    var loadedObject = Resources.Load(fileName);
 
     if (loadedObject == null)
     {
-      throw new FileNotFoundException("...no file found - please check the configuration");
+      throw new FileNotFoundException($"{fileName} not found.");
     }
 
     return loadedObject;

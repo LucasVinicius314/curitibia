@@ -20,7 +20,9 @@ public class TerrainScript : MonoBehaviour
   {
     var seed = UnityEngine.Random.value * 5000f;
 
-    var material = Materials.grass;
+    var material = Materials.@default;
+
+    material.mainTexture = Textures.atlas;
 
     for (int x = -size + 1; x < size; x++)
     {

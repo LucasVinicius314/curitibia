@@ -208,10 +208,21 @@ public class ChunkScript : MonoBehaviour
         break;
     }
 
-    uv[vc] = new Vector2(0, 0);
-    uv[vc + 1] = new Vector2(0, 1);
-    uv[vc + 2] = new Vector2(1, 0);
-    uv[vc + 3] = new Vector2(1, 1);
+    switch (orientation)
+    {
+      case Orientation.up:
+        uv[vc] = new Vector2(0, 0);
+        uv[vc + 1] = new Vector2(0, 1);
+        uv[vc + 2] = new Vector2(.5f, 0);
+        uv[vc + 3] = new Vector2(.5f, 1);
+        break;
+      default:
+        uv[vc] = new Vector2(.5f, 0);
+        uv[vc + 1] = new Vector2(.5f, 1);
+        uv[vc + 2] = new Vector2(1, 0);
+        uv[vc + 3] = new Vector2(1, 1);
+        break;
+    }
 
     triangles[tc] = vc;
     triangles[tc + 1] = vc + 1;

@@ -4,5 +4,5 @@ using UnityEngine;
 
 static class Materials
 {
-  public static readonly Material grass = (Material)Utils.LoadPrefabFromFile("Materials/GrassMat");
+  public static readonly Material @default = (Material)Utils.LoadPrefabFromFile("Materials/DefaultMat");
 }

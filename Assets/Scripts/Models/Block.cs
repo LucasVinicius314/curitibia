@@ -4,12 +4,12 @@ using UnityEngine;
 
 record Block
 {
-  public Block(Material material, string name)
+  public Block(Texture2D texture, string name)
   {
-    this.material = material;
+    this.texture = texture;
     this.name = name;
   }
 
-  public Material material;
+  public Texture2D texture;
   public string name;
 }
