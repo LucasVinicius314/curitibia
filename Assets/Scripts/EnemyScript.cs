@@ -9,15 +9,22 @@ public class EnemyScript : NetworkBehaviour
 {
   // Start is called before the first frame update
   Transform? target;
+  Rigidbody? rb;
   GameObject? projectilePrefab;
   NavMeshAgent? navMeshAgent;
+  NavMeshPath? navMeshPath;
   Transform? root;
   Transform? legR;
   Transform? legL;
   Vector3 oldPosition;
   LayerMask enemyLayer = 1 << 7;
+  [HideInInspector] public bool pathAvailable;
   float turningSpeed = 6f;
   float pathUpdateDelay = 0.2f;
+  float escapeTime = 3f;
+  float escapeDistance = 3f;
+  bool targetVisible = false;
+  float lastSeen;
   float maxRange = 13f;
   float fieldOfView = 70f;
   float stoppingDistance = .5f;
@@ -30,10 +37,12 @@ public class EnemyScript : NetworkBehaviour
   {
     projectilePrefab = (GameObject)Utils.LoadPrefabFromFile("Prefabs/Projectile");
     navMeshAgent = GetComponent<NavMeshAgent>();
+    rb = GetComponent<Rigidbody>();
     root = transform.Find("Amogos/Root");
     legR = transform.Find("Amogos/Root/Legs/Leg_R");
     legL = transform.Find("Amogos/Root/Legs/Leg_L");
     oldPosition = transform.position;
+    navMeshPath = new NavMeshPath();
     animationRandomiser = Random.Range(0, 50);
     if (isServer)
     {
@@ -54,13 +63,16 @@ public class EnemyScript : NetworkBehaviour
   {
     while (true)
     {
-      if (target != null && navMeshAgent != null)
+      if (target != null && navMeshAgent != null && rb != null)
       {
-        if (CheckVisibility(target.position) || targetDistance < 2f)
+        if (CheckVisibility(target.position) || targetDistance < escapeDistance || Time.time - lastSeen < escapeTime)
         {
-
-          navMeshAgent.stoppingDistance = stoppingDistance;
-          navMeshAgent.SetDestination(target.position);
+          if (navMeshAgent.enabled == true)
+          {
+            CalculateNewPath(target.position);
+            navMeshAgent.stoppingDistance = stoppingDistance;
+            navMeshAgent.SetDestination(target.position);
+          }
         }
         else
         {
@@ -91,6 +103,7 @@ public class EnemyScript : NetworkBehaviour
     {
       targetDistance = Vector3.Distance(transform.position, target.position);
       Debug.DrawLine(transform.position, target.position, Color.white);
+      DebugDrawPath(navMeshAgent.path);
     }
     if (navMeshAgent.remainingDistance < 4f && target != null)
     {
@@ -129,11 +142,11 @@ public class EnemyScript : NetworkBehaviour
   void LoseTarget()
   {
     if (target == null || navMeshAgent == null) return;
+    Debug.DrawLine(target.position, target.position + Vector3.up, Color.yellow, 2f);
     Vector3 targetTracker = target.position + target.forward;
     target = null;
     navMeshAgent.stoppingDistance = .5f;
     navMeshAgent.SetDestination(targetTracker);
-
   }
 
   void LookAt(Vector3 targetPosition)
@@ -155,7 +168,6 @@ public class EnemyScript : NetworkBehaviour
   // Check if target is visible
   bool CheckVisibility(Vector3 targetPosition)
   {
-    bool isVisible = false;
     if (targetPosition != null)
     {
       RaycastHit hit;
@@ -167,11 +179,52 @@ public class EnemyScript : NetworkBehaviour
         {
           if (hit.transform.tag == "Player")
           {
-            isVisible = true;
+            lastSeen = Time.time;
+            return targetVisible = true;
           }
         }
       }
     }
-    return isVisible;
+    return targetVisible = false;
   }
+
+
+  // Calculates a new path to the target and returns true if it is reachable
+  bool CalculateNewPath(Vector3 targetPosition)
+  {
+    if (navMeshAgent == null || target == null || navMeshPath == null)
+    {
+      pathAvailable = false;
+      return false;
+    }
+
+    navMeshAgent.CalculatePath(targetPosition, navMeshPath);
+    if (navMeshPath.status != NavMeshPathStatus.PathComplete)
+    {
+      pathAvailable = false;
+      return pathAvailable;
+    }
+    else
+    {
+      pathAvailable = true;
+      return pathAvailable;
+    }
+  }
+
+  void DebugDrawPath(NavMeshPath path)
+  {
+    Color color = Color.white;
+    if (target != null)
+    {
+      if (targetVisible || targetDistance < escapeDistance) color = Color.cyan;
+      else if (Time.time - lastSeen < escapeTime) color = Color.yellow;
+    }
+    Vector3 lastCorner = Vector3.up + path.corners[0];
+    foreach (Vector3 corner in path.corners)
+    {
+      Debug.DrawLine(lastCorner, Vector3.up + corner, color);
+      lastCorner = Vector3.up + corner;
+    }
+  }
+
 }
