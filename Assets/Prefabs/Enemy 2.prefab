@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 1133486514136376961}
   m_Layer: 7
   m_Name: Arm_R
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -46,7 +46,7 @@ GameObject:
   - component: {fileID: 1857850535647620771}
   m_Layer: 7
   m_Name: Body
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -204,6 +204,7 @@ MonoBehaviour:
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
+  pathAvailable: 0
 --- !u!114 &1857850535718550706
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -282,7 +283,7 @@ GameObject:
   - component: {fileID: 8105407513133902253}
   m_Layer: 7
   m_Name: Leg_L
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -317,7 +318,7 @@ GameObject:
   - component: {fileID: 9004324763403086262}
   m_Layer: 7
   m_Name: Capsule (1)
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -415,7 +416,7 @@ GameObject:
   - component: {fileID: 4134855559207435862}
   m_Layer: 7
   m_Name: Capsule
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -513,7 +514,7 @@ GameObject:
   - component: {fileID: 6015534817113600291}
   m_Layer: 7
   m_Name: Backpack
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -611,7 +612,7 @@ GameObject:
   - component: {fileID: 8273893816242531501}
   m_Layer: 7
   m_Name: Capsule
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -709,7 +710,7 @@ GameObject:
   - component: {fileID: 1111746428523446697}
   m_Layer: 7
   m_Name: Hand_R
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -804,7 +805,7 @@ GameObject:
   - component: {fileID: 1557252301182070918}
   m_Layer: 7
   m_Name: Leg_R
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -836,7 +837,7 @@ GameObject:
   - component: {fileID: 3945834908490054953}
   m_Layer: 7
   m_Name: Root
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -872,7 +873,7 @@ GameObject:
   - component: {fileID: 7496091706370011305}
   m_Layer: 7
   m_Name: Legs
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -908,7 +909,7 @@ GameObject:
   - component: {fileID: 7892196017030060484}
   m_Layer: 7
   m_Name: Capsule (3)
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1003,7 +1004,7 @@ GameObject:
   - component: {fileID: 53376233633278082}
   m_Layer: 7
   m_Name: Arms
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1036,7 +1037,7 @@ GameObject:
   - component: {fileID: 8556034981037405968}
   m_Layer: 7
   m_Name: Visor
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1069,7 +1070,7 @@ GameObject:
   - component: {fileID: 5854673365908831894}
   m_Layer: 7
   m_Name: Arm_L
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1104,7 +1105,7 @@ GameObject:
   - component: {fileID: 1996699864483961339}
   m_Layer: 7
   m_Name: Hand_L
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1199,7 +1200,7 @@ GameObject:
   - component: {fileID: 2166492559915888103}
   m_Layer: 7
   m_Name: Amogos
-  m_TagString: Enemy
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
