@@ -2,7 +2,7 @@ using UnityEngine;
 
 #nullable enable
 
-record Block
+public record Block
 {
   public Block(Texture2D texture, string name)
   {

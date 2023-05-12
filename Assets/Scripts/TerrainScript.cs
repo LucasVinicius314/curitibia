@@ -16,6 +16,8 @@ public class TerrainScript : MonoBehaviour
 
   Dictionary<(int, int), ChunkScript> chunkMap = new Dictionary<(int, int), ChunkScript>();
 
+  public List<Block> blocks = new List<Block>();
+
   void BuildTerrain()
   {
     var seed = UnityEngine.Random.value * 5000f;
@@ -34,7 +36,7 @@ public class TerrainScript : MonoBehaviour
 
         chunkScript.terrainScript = this;
         chunkScript.chunkCoordinate = (x, z);
-        chunkScript.GenerateTerrainMap(seed);
+        chunkScript.GenerateTerrainMap(seed, blocks);
         chunkMap.Add((x, z), chunkScript);
 
         chunk.GetComponent<MeshRenderer>().material = material;
@@ -78,6 +80,11 @@ public class TerrainScript : MonoBehaviour
   void Awake()
   {
     navMeshSurface = GetComponent<NavMeshSurface>();
+
+    blocks = new List<Block>() {
+      new Block(name: "Stone", texture: Textures.stone),
+      new Block(name: "Grass", texture: Textures.grass),
+    };
   }
 
   void Start()

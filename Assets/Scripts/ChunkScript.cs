@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 #nullable enable
@@ -21,7 +22,7 @@ public class ChunkScript : MonoBehaviour
 
   public (int, int) chunkCoordinate;
 
-  bool[,,]? terrainMap;
+  Block[,,]? terrainMap;
 
   Mesh? mesh;
   MeshCollider? meshCollider;
@@ -61,37 +62,41 @@ public class ChunkScript : MonoBehaviour
       {
         for (int z = 0; z < forward; z++)
         {
-          if (terrainMap[x, y, z])
+          if (terrainMap[x, y, z] != null)
           {
-            if (x == 0 ? (westernChunk?.HasBlock(width - 1, y, z) ?? false) == false : !terrainMap[x - 1, y, z])
+            var textureOffset = Textures.GetTextureOffset(terrainMap[x, y, z].texture);
+
+            var textureXUvStart = textureOffset.Item1;
+            var textureXUvEnd = textureOffset.Item2;
+
+            if (x == 0 ? westernChunk?.GetBlock(width - 1, y, z) == null : terrainMap[x - 1, y, z] == null)
             {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.west);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.west, textureXUvStart, textureXUvEnd);
             }
-            if (x == right - 1 ? (easternChunk?.HasBlock(0, y, z) ?? false) == false : !terrainMap[x + 1, y, z])
+            if (x == right - 1 ? easternChunk?.GetBlock(0, y, z) == null : terrainMap[x + 1, y, z] == null)
             {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.east);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.east, textureXUvStart, textureXUvEnd);
             }
-            if (y == 0 || !terrainMap[x, y - 1, z])
+            if (y == 0 || terrainMap[x, y - 1, z] == null)
             {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.down);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.down, textureXUvStart, textureXUvEnd);
             }
-            if (y == up - 1 || !terrainMap[x, y + 1, z])
+            if (y == up - 1 || terrainMap[x, y + 1, z] == null)
             {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.up);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.up, textureXUvStart, textureXUvEnd);
             }
-            if (z == 0 ? (southernChunk?.HasBlock(x, y, depth - 1) ?? false) == false : !terrainMap[x, y, z - 1])
+            if (z == 0 ? southernChunk?.GetBlock(x, y, depth - 1) == null : terrainMap[x, y, z - 1] == null)
             {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.south);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.south, textureXUvStart, textureXUvEnd);
             }
-            if (z == forward - 1 ? (northernChunk?.HasBlock(x, y, 0) ?? false) == false : !terrainMap[x, y, z + 1])
+            if (z == forward - 1 ? northernChunk?.GetBlock(x, y, 0) == null : terrainMap[x, y, z + 1] == null)
             {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.north);
+              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.north, textureXUvStart, textureXUvEnd);
             }
           }
         }
       }
     }
-
 
     var newUv = new Vector2[vc];
 
@@ -127,14 +132,14 @@ public class ChunkScript : MonoBehaviour
     }
   }
 
-  public void GenerateTerrainMap(float seed)
+  public void GenerateTerrainMap(float seed, List<Block> blocks)
   {
     var weight = .04f;
     var amplitude = 10f;
 
     var dimensions = new Vector3(width, height, depth);
 
-    var newTerrainMap = new bool[width, height, depth];
+    var newTerrainMap = new Block[width, height, depth];
 
     for (int x = 0; x < width; x++)
     {
@@ -146,27 +151,29 @@ public class ChunkScript : MonoBehaviour
 
         var targetHeight = Mathf.PerlinNoise(tX, tZ) * amplitude + height / 2;
 
-        for (int y = 0; y < targetHeight; y++)
+        for (int y = 0; y < targetHeight - 1; y++)
         {
-          newTerrainMap[x, y, z] = true;
+          newTerrainMap[x, y, z] = blocks[0];
         }
+
+        newTerrainMap[x, (int)targetHeight - 1, z] = blocks[1];
       }
     }
 
     terrainMap = newTerrainMap;
   }
 
-  public bool HasBlock(int x, int y, int z)
+  public Block? GetBlock(int x, int y, int z)
   {
     if (terrainMap == null)
     {
-      return false;
+      return null;
     }
 
     return terrainMap[x, y, z];
   }
 
-  void RenderQuad(Vector3[] vertices, int[] triangles, Vector2[] uv, ref int vc, ref int tc, int x, int y, int z, Vector3 offset, Orientation orientation)
+  void RenderQuad(Vector3[] vertices, int[] triangles, Vector2[] uv, ref int vc, ref int tc, int x, int y, int z, Vector3 offset, Orientation orientation, float textureXUvStart, float textureXUvEnd)
   {
     switch (orientation)
     {
@@ -208,21 +215,11 @@ public class ChunkScript : MonoBehaviour
         break;
     }
 
-    switch (orientation)
-    {
-      case Orientation.up:
-        uv[vc] = new Vector2(0, 0);
-        uv[vc + 1] = new Vector2(0, 1);
-        uv[vc + 2] = new Vector2(.5f, 0);
-        uv[vc + 3] = new Vector2(.5f, 1);
-        break;
-      default:
-        uv[vc] = new Vector2(.5f, 0);
-        uv[vc + 1] = new Vector2(.5f, 1);
-        uv[vc + 2] = new Vector2(1, 0);
-        uv[vc + 3] = new Vector2(1, 1);
-        break;
-    }
+
+    uv[vc] = new Vector2(textureXUvStart, 0);
+    uv[vc + 1] = new Vector2(textureXUvStart, 1);
+    uv[vc + 2] = new Vector2(textureXUvEnd, 0);
+    uv[vc + 3] = new Vector2(textureXUvEnd, 1);
 
     triangles[tc] = vc;
     triangles[tc + 1] = vc + 1;
