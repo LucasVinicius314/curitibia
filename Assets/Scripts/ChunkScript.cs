@@ -22,7 +22,7 @@ public class ChunkScript : MonoBehaviour
 
   public (int, int) chunkCoordinate;
 
-  Block[,,]? terrainMap;
+  Block?[,,]? terrainMap;
 
   Mesh? mesh;
   MeshCollider? meshCollider;
@@ -64,7 +64,7 @@ public class ChunkScript : MonoBehaviour
         {
           if (terrainMap[x, y, z] != null)
           {
-            var textureOffset = Textures.GetTextureOffset(terrainMap[x, y, z].texture);
+            var textureOffset = Textures.GetTextureOffset(terrainMap[x, y, z]!.texture);
 
             var textureXUvStart = textureOffset.Item1;
             var textureXUvEnd = textureOffset.Item2;
@@ -215,7 +215,6 @@ public class ChunkScript : MonoBehaviour
         break;
     }
 
-
     uv[vc] = new Vector2(textureXUvStart, 0);
     uv[vc + 1] = new Vector2(textureXUvStart, 1);
     uv[vc + 2] = new Vector2(textureXUvEnd, 0);
@@ -230,6 +229,18 @@ public class ChunkScript : MonoBehaviour
 
     vc += 4;
     tc += 6;
+  }
+
+  public void SetBlock(int x, int y, int z, Block? block)
+  {
+    if (terrainMap == null)
+    {
+      return;
+    }
+
+    terrainMap[x, y, z] = block;
+
+    CreateMesh();
   }
 
   void Awake()

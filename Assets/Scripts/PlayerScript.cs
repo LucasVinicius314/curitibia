@@ -15,11 +15,11 @@ class PlayerScript : NetworkBehaviour
   Vector3 playerDirection;
   Rigidbody? rb;
   Transform? cameraContainer;
+  TerrainScript? terrainScript;
   float cameraContainerXRotation = 0f;
   [SerializeField]
   LayerMask g;
   public bool grounded;
-
 
   bool CheckGroundContact()
   {
@@ -45,6 +45,83 @@ class PlayerScript : NetworkBehaviour
     // Debug.Log($"{a} {b}");
 
     return a && b;
+  }
+
+  Vector3? DoBlockRaycast(Transform cameraContainer)
+  {
+    RaycastHit hit;
+    if (Physics.Raycast(cameraContainer.position, cameraContainer.forward, out hit, 6f))
+    {
+      var targetPoint = hit.point + hit.normal * .1f;
+
+      return new Vector3
+      {
+        x = Mathf.Floor(targetPoint.x),
+        y = Mathf.Floor(targetPoint.y),
+        z = Mathf.Floor(targetPoint.z),
+      };
+    }
+
+    return null;
+  }
+
+  public void Fire(InputAction.CallbackContext context)
+  {
+    if (!isLocalPlayer || cameraContainer == null || terrainScript == null)
+    {
+      return;
+    }
+
+    if (context.performed)
+    {
+      var blockRaycast = DoBlockRaycast(cameraContainer);
+
+      if (blockRaycast == null)
+      {
+        return;
+      }
+
+      terrainScript.SetBlock((Vector3)blockRaycast);
+    }
+  }
+
+  void HandleBlockHighlight(Transform cameraContainer)
+  {
+    var blockRaycast = DoBlockRaycast(cameraContainer);
+
+    if (blockRaycast == null)
+    {
+      return;
+    }
+
+    var origin = (Vector3)blockRaycast;
+
+    var x0y0z1 = origin + Vector3.forward;
+    var x0y1z0 = origin + Vector3.up;
+    var x0y1z1 = origin + Vector3.up + Vector3.forward;
+    var x1y0z0 = origin + Vector3.right;
+    var x1y0z1 = origin + Vector3.right + Vector3.forward;
+    var x1y1z0 = origin + Vector3.right + Vector3.up;
+    var x1y1z1 = origin + Vector3.one;
+
+    Debug.DrawLine(origin, x1y0z0);
+    Debug.DrawLine(origin, x0y1z0);
+    Debug.DrawLine(origin, x0y0z1);
+
+    Debug.DrawLine(x1y0z0, x1y1z0);
+    Debug.DrawLine(x1y0z0, x1y0z1);
+
+    Debug.DrawLine(x1y1z0, x1y1z1);
+
+    Debug.DrawLine(x0y1z0, x1y1z0);
+    Debug.DrawLine(x0y1z0, x0y1z1);
+
+    Debug.DrawLine(x0y0z1, x1y0z1);
+    Debug.DrawLine(x0y0z1, x0y1z1);
+
+    Debug.DrawLine(x1y0z1, x1y1z1);
+
+    Debug.DrawLine(x0y1z1, x1y1z1);
   }
 
   void Jump()
@@ -104,6 +181,8 @@ class PlayerScript : NetworkBehaviour
     Cursor.visible = false;
     Cursor.lockState = CursorLockMode.Locked;
 
+    terrainScript = GameObject.Find("Geometry").GetComponent<TerrainScript>();
+
     base.OnStartLocalPlayer();
   }
 
@@ -130,10 +209,12 @@ class PlayerScript : NetworkBehaviour
   void Update()
   {
     grounded = Physics.Raycast(transform.position, Vector3.down, 2 * 0.5f + 0.2f);
+
     if (!isLocalPlayer || rb == null)
     {
       return;
     }
+
     StepClimb();
 
     smoothedMovementInput = Vector2.Lerp(smoothedMovementInput, movementInput, .1f);
@@ -147,6 +228,11 @@ class PlayerScript : NetworkBehaviour
     else
     {
       rb.velocity = Vector3.ClampMagnitude(vector, 1f) * 5f + Vector3.up * rb.velocity.y;
+    }
+
+    if (cameraContainer != null)
+    {
+      HandleBlockHighlight(cameraContainer);
     }
   }
 

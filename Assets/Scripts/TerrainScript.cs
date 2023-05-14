@@ -50,6 +50,23 @@ public class TerrainScript : MonoBehaviour
     }
   }
 
+  public void SetBlock(Vector3 position)
+  {
+    var tX = position.x + 16;
+    var tZ = position.z + 16;
+
+    var chunkX = Mathf.FloorToInt(tX / 32);
+    var chunkZ = Mathf.FloorToInt(tZ / 32);
+
+    var blockX = Mathf.FloorToInt(tX - chunkX * 32);
+    var blockY = Mathf.FloorToInt(position.y + 32);
+    var blockZ = Mathf.FloorToInt(tZ - chunkZ * 32);
+
+    var chunk = chunkMap[(chunkX, chunkZ)];
+
+    chunk.SetBlock(blockX, blockY, blockZ, blocks[0]);
+  }
+
   public ChunkScript? GetNeighbourChunk((int, int) coordinates, Orientation orientation)
   {
     var tempX = coordinates.Item1;
