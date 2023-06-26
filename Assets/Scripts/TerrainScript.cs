@@ -8,10 +8,6 @@ using UnityEngine;
 [RequireComponent(typeof(NavMeshSurface))]
 public class TerrainScript : MonoBehaviour
 {
-  [SerializeField]
-  [Range(1, 32)]
-  int size = 3;
-
   NavMeshSurface? navMeshSurface;
 
   Dictionary<(int, int), ChunkScript> chunkMap = new Dictionary<(int, int), ChunkScript>();
@@ -20,37 +16,9 @@ public class TerrainScript : MonoBehaviour
 
   public static TerrainScript? instance;
 
-  void BuildTerrain()
-  {
-    var seed = UnityEngine.Random.value * 5000f;
+  float seed = 0f;
 
-    var material = Materials.@default;
-
-    material.mainTexture = Textures.atlas;
-
-    for (int x = -size + 1; x < size; x++)
-    {
-      for (int z = -size + 1; z < size; z++)
-      {
-        var chunk = new GameObject("Chunk");
-
-        var chunkScript = chunk.AddComponent<ChunkScript>();
-
-        chunkScript.terrainScript = this;
-        chunkScript.chunkCoordinate = (x, z);
-        chunkScript.GenerateTerrainMap(seed, blocks);
-        chunkMap.Add((x, z), chunkScript);
-
-        chunk.GetComponent<MeshRenderer>().material = material;
-        chunk.transform.SetParent(transform);
-        chunk.transform.position = new Vector3
-        {
-          x = x * ChunkScript.width,
-          z = z * ChunkScript.depth,
-        };
-      }
-    }
-  }
+  Material? chunkMaterial;
 
   public void SetBlock(Vector3 position, Block? block)
   {
@@ -67,6 +35,14 @@ public class TerrainScript : MonoBehaviour
     var chunk = chunkMap[(chunkX, chunkZ)];
 
     chunk.SetBlock(blockX, blockY, blockZ, block);
+  }
+
+  public ChunkScript? GetChunk((int, int) coordinates)
+  {
+    var tempX = coordinates.Item1;
+    var tempZ = coordinates.Item2;
+
+    return chunkMap.GetValueOrDefault((tempX, tempZ));
   }
 
   public ChunkScript? GetNeighbourChunk((int, int) coordinates, Orientation orientation)
@@ -96,27 +72,94 @@ public class TerrainScript : MonoBehaviour
     return chunkMap.GetValueOrDefault((tempX, tempZ));
   }
 
+  public ChunkScript LoadChunk((int, int) key)
+  {
+    var chunk = new GameObject("Chunk");
+
+    var chunkScript = chunk.AddComponent<ChunkScript>();
+
+    chunkScript.terrainScript = this;
+    chunkScript.chunkCoordinate = key;
+    chunkScript.GenerateTerrainMap(seed, blocks);
+    chunkMap.Add(key, chunkScript);
+
+    chunk.GetComponent<MeshRenderer>().material = chunkMaterial;
+    chunk.transform.SetParent(transform);
+    chunk.transform.position = new Vector3
+    {
+      x = key.Item1 * ChunkScript.width,
+      z = key.Item2 * ChunkScript.depth,
+    };
+
+    return chunkScript;
+  }
+
+  public void LoadChunks((int, int) key, int distance)
+  {
+    for (int x = -distance + 1; x < distance; x++)
+    {
+      for (int z = -distance + 1; z < distance; z++)
+      {
+        var newKey = (key.Item1 + x, key.Item2 + z);
+
+        if (!chunkMap.ContainsKey(newKey))
+        {
+          var chunk = LoadChunk(newKey);
+
+          chunk.CreateMesh();
+        }
+      }
+    }
+
+    navMeshSurface?.BuildNavMesh();
+  }
+
+  public void UnloadChunk((int, int) key)
+  {
+    Destroy(chunkMap[key].gameObject);
+
+    chunkMap.Remove(key);
+  }
+
+  public void UnloadChunks((int, int) source, int distance)
+  {
+    var keys = new (int, int)[chunkMap.Keys.Count];
+
+    chunkMap.Keys.CopyTo(keys, 0);
+
+    foreach (var key in keys)
+    {
+      var chunk = chunkMap[key];
+
+      var isFarX = Mathf.Abs(key.Item1 - source.Item1) > distance;
+      var isFarZ = Mathf.Abs(key.Item2 - source.Item2) > distance;
+
+      if (isFarX || isFarZ)
+      {
+        UnloadChunk(key);
+      }
+    }
+  }
+
   void Awake()
   {
     instance = this;
 
+    chunkMaterial = Materials.@default;
+    chunkMaterial.mainTexture = Textures.atlas;
+
+    seed = UnityEngine.Random.value * 5000f;
+
     navMeshSurface = GetComponent<NavMeshSurface>();
 
     blocks = new List<Block>() {
-      new Block(name: "Stone", texture: Textures.stone),
-      new Block(name: "Grass", texture: Textures.grass),
+      Block.stone,
+      Block.grass,
     };
   }
 
   void Start()
   {
-    BuildTerrain();
-
-    foreach (var chunk in chunkMap.Values)
-    {
-      chunk.CreateMesh();
-    }
-
-    navMeshSurface?.BuildNavMesh();
+    LoadChunks((0, 0), 3);
   }
 }

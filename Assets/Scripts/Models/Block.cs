@@ -12,4 +12,7 @@ public record Block
 
   public Texture2D texture;
   public string name;
+
+  public static Block stone = new Block(name: "Stone", texture: Textures.stone);
+  public static Block grass = new Block(name: "Grass", texture: Textures.grass);
 }

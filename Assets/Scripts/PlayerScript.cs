@@ -27,6 +27,7 @@ class PlayerScript : NetworkBehaviour
   [SerializeField]
   LayerMask g;
   public bool grounded;
+  ChunkScript? currentChunk;
 
   bool CheckGroundContact()
   {
@@ -52,6 +53,35 @@ class PlayerScript : NetworkBehaviour
     // Debug.Log($"{a} {b}");
 
     return a && b;
+  }
+
+  System.Collections.IEnumerator CurrentChunkRoutine()
+  {
+    while (true)
+    {
+      if (terrainScript != null)
+      {
+        var targetX = Mathf.FloorToInt((transform.position.x - 16) / 32 + 1);
+        var targetZ = Mathf.FloorToInt((transform.position.z - 16) / 32 + 1);
+
+        var target = (targetX, targetZ);
+
+        var chunk = terrainScript.GetChunk(target);
+
+        if (currentChunk != chunk)
+        {
+          currentChunk = chunk;
+
+          if (chunk != null)
+          {
+            terrainScript.UnloadChunks(chunk.chunkCoordinate, 3);
+            terrainScript.LoadChunks(chunk.chunkCoordinate, 3);
+          }
+        }
+      }
+
+      yield return new WaitForSeconds(1f);
+    }
   }
 
   Vector3? DoBlockRaycast(Transform cameraContainer, BlockRayCastMode blockRayCastMode)
@@ -211,6 +241,8 @@ class PlayerScript : NetworkBehaviour
     Cursor.lockState = CursorLockMode.Locked;
 
     terrainScript = GameObject.Find("Geometry").GetComponent<TerrainScript>();
+
+    StartCoroutine(CurrentChunkRoutine());
 
     base.OnStartLocalPlayer();
   }
