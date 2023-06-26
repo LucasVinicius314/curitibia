@@ -18,6 +18,8 @@ public class TerrainScript : MonoBehaviour
 
   public List<Block> blocks = new List<Block>();
 
+  public static TerrainScript? instance;
+
   void BuildTerrain()
   {
     var seed = UnityEngine.Random.value * 5000f;
@@ -50,7 +52,7 @@ public class TerrainScript : MonoBehaviour
     }
   }
 
-  public void SetBlock(Vector3 position)
+  public void SetBlock(Vector3 position, Block? block)
   {
     var tX = position.x + 16;
     var tZ = position.z + 16;
@@ -64,7 +66,7 @@ public class TerrainScript : MonoBehaviour
 
     var chunk = chunkMap[(chunkX, chunkZ)];
 
-    chunk.SetBlock(blockX, blockY, blockZ, blocks[0]);
+    chunk.SetBlock(blockX, blockY, blockZ, block);
   }
 
   public ChunkScript? GetNeighbourChunk((int, int) coordinates, Orientation orientation)
@@ -96,6 +98,8 @@ public class TerrainScript : MonoBehaviour
 
   void Awake()
   {
+    instance = this;
+
     navMeshSurface = GetComponent<NavMeshSurface>();
 
     blocks = new List<Block>() {

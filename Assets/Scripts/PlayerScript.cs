@@ -1,8 +1,15 @@
 using Mirror;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 #nullable enable
+
+public enum BlockRayCastMode
+{
+  normal,
+  antinormal,
+}
 
 class PlayerScript : NetworkBehaviour
 {
@@ -47,12 +54,12 @@ class PlayerScript : NetworkBehaviour
     return a && b;
   }
 
-  Vector3? DoBlockRaycast(Transform cameraContainer)
+  Vector3? DoBlockRaycast(Transform cameraContainer, BlockRayCastMode blockRayCastMode)
   {
     RaycastHit hit;
     if (Physics.Raycast(cameraContainer.position, cameraContainer.forward, out hit, 6f))
     {
-      var targetPoint = hit.point + hit.normal * .1f;
+      var targetPoint = hit.point + hit.normal * (blockRayCastMode == BlockRayCastMode.normal ? .1f : -.1f);
 
       return new Vector3
       {
@@ -74,20 +81,42 @@ class PlayerScript : NetworkBehaviour
 
     if (context.performed)
     {
-      var blockRaycast = DoBlockRaycast(cameraContainer);
+      var blockRaycast = DoBlockRaycast(cameraContainer, BlockRayCastMode.antinormal);
 
       if (blockRaycast == null)
       {
         return;
       }
 
-      terrainScript.SetBlock((Vector3)blockRaycast);
+      terrainScript.SetBlock((Vector3)blockRaycast, null);
+    }
+  }
+
+  public void Fire2(InputAction.CallbackContext context)
+  {
+    if (!isLocalPlayer || cameraContainer == null || terrainScript == null)
+    {
+      return;
+    }
+
+    if (context.performed)
+    {
+      var blockRaycast = DoBlockRaycast(cameraContainer, BlockRayCastMode.normal);
+
+      if (blockRaycast == null)
+      {
+        return;
+      }
+
+      var block = (TerrainScript.instance?.blocks ?? new List<Block>())[0];
+
+      terrainScript.SetBlock((Vector3)blockRaycast, block);
     }
   }
 
   void HandleBlockHighlight(Transform cameraContainer)
   {
-    var blockRaycast = DoBlockRaycast(cameraContainer);
+    var blockRaycast = DoBlockRaycast(cameraContainer, BlockRayCastMode.normal);
 
     if (blockRaycast == null)
     {
