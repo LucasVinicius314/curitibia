@@ -94,7 +94,7 @@ public class TerrainScript : MonoBehaviour
     return chunkScript;
   }
 
-  public void LoadChunks((int, int) key, int distance)
+  public System.Collections.IEnumerator LoadChunks((int, int) key, int distance)
   {
     for (int x = -distance + 1; x < distance; x++)
     {
@@ -106,12 +106,13 @@ public class TerrainScript : MonoBehaviour
         {
           var chunk = LoadChunk(newKey);
 
-          chunk.CreateMesh();
+          yield return StartCoroutine(chunk.CreateMesh());
         }
       }
     }
 
-    navMeshSurface?.BuildNavMesh();
+    // TODO: fix, fix navmesh lag
+    // navMeshSurface?.BuildNavMesh();
   }
 
   public void UnloadChunk((int, int) key)
@@ -160,6 +161,6 @@ public class TerrainScript : MonoBehaviour
 
   void Start()
   {
-    LoadChunks((0, 0), 3);
+    StartCoroutine(LoadChunks((0, 0), 3));
   }
 }

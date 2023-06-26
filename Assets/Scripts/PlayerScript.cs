@@ -75,7 +75,7 @@ class PlayerScript : NetworkBehaviour
           if (chunk != null)
           {
             terrainScript.UnloadChunks(chunk.chunkCoordinate, 3);
-            terrainScript.LoadChunks(chunk.chunkCoordinate, 3);
+            yield return terrainScript.LoadChunks(chunk.chunkCoordinate, 3);
           }
         }
       }

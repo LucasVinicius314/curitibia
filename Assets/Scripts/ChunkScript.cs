@@ -29,106 +29,109 @@ public class ChunkScript : MonoBehaviour
   MeshFilter? meshFilter;
   public TerrainScript? terrainScript;
 
-  public void CreateMesh()
+  public System.Collections.IEnumerator CreateMesh()
   {
-    if (terrainScript == null || terrainMap == null || mesh == null)
+    if (terrainScript != null && terrainMap != null && mesh != null)
     {
-      return;
-    }
+      mesh.Clear();
 
-    mesh.Clear();
+      var offset = new Vector3 { x = -width / 2, y = -height, z = -depth / 2 };
 
-    var offset = new Vector3 { x = -width / 2, y = -height, z = -depth / 2 };
+      var right = terrainMap.GetLength(0);
+      var up = terrainMap.GetLength(1);
+      var forward = terrainMap.GetLength(2);
 
-    var right = terrainMap.GetLength(0);
-    var up = terrainMap.GetLength(1);
-    var forward = terrainMap.GetLength(2);
+      var uv = new Vector2[4 * 6 * right * up * forward];
+      var triangles = new int[6 * 6 * right * up * forward];
+      var vertices = new Vector3[4 * 6 * right * up * forward];
 
-    var uv = new Vector2[4 * 6 * right * up * forward];
-    var triangles = new int[6 * 6 * right * up * forward];
-    var vertices = new Vector3[4 * 6 * right * up * forward];
+      var vc = 0;
+      var tc = 0;
 
-    var vc = 0;
-    var tc = 0;
+      var northernChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.north);
+      var southernChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.south);
+      var easternChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.east);
+      var westernChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.west);
 
-    var northernChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.north);
-    var southernChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.south);
-    var easternChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.east);
-    var westernChunk = terrainScript.GetNeighbourChunk(chunkCoordinate, Orientation.west);
-
-    for (int x = 0; x < right; x++)
-    {
-      for (int y = 0; y < up; y++)
+      for (int x = 0; x < right; x++)
       {
-        for (int z = 0; z < forward; z++)
+        for (int y = 0; y < up; y++)
         {
-          if (terrainMap[x, y, z] != null)
+          for (int z = 0; z < forward; z++)
           {
-            var textureOffset = Textures.GetTextureOffset(terrainMap[x, y, z]!.texture);
+            if (terrainMap[x, y, z] != null)
+            {
+              var textureOffset = Textures.GetTextureOffset(terrainMap[x, y, z]!.texture);
 
-            var textureXUvStart = textureOffset.Item1;
-            var textureXUvEnd = textureOffset.Item2;
+              var textureXUvStart = textureOffset.Item1;
+              var textureXUvEnd = textureOffset.Item2;
 
-            if (x == 0 ? westernChunk?.GetBlock(width - 1, y, z) == null : terrainMap[x - 1, y, z] == null)
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.west, textureXUvStart, textureXUvEnd);
-            }
-            if (x == right - 1 ? easternChunk?.GetBlock(0, y, z) == null : terrainMap[x + 1, y, z] == null)
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.east, textureXUvStart, textureXUvEnd);
-            }
-            if (y == 0 || terrainMap[x, y - 1, z] == null)
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.down, textureXUvStart, textureXUvEnd);
-            }
-            if (y == up - 1 || terrainMap[x, y + 1, z] == null)
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.up, textureXUvStart, textureXUvEnd);
-            }
-            if (z == 0 ? southernChunk?.GetBlock(x, y, depth - 1) == null : terrainMap[x, y, z - 1] == null)
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.south, textureXUvStart, textureXUvEnd);
-            }
-            if (z == forward - 1 ? northernChunk?.GetBlock(x, y, 0) == null : terrainMap[x, y, z + 1] == null)
-            {
-              RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.north, textureXUvStart, textureXUvEnd);
+              if (x == 0 ? westernChunk?.GetBlock(width - 1, y, z) == null : terrainMap[x - 1, y, z] == null)
+              {
+                RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.west, textureXUvStart, textureXUvEnd);
+              }
+              if (x == right - 1 ? easternChunk?.GetBlock(0, y, z) == null : terrainMap[x + 1, y, z] == null)
+              {
+                RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.east, textureXUvStart, textureXUvEnd);
+              }
+              if (y == 0 || terrainMap[x, y - 1, z] == null)
+              {
+                RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.down, textureXUvStart, textureXUvEnd);
+              }
+              if (y == up - 1 || terrainMap[x, y + 1, z] == null)
+              {
+                RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.up, textureXUvStart, textureXUvEnd);
+              }
+              if (z == 0 ? southernChunk?.GetBlock(x, y, depth - 1) == null : terrainMap[x, y, z - 1] == null)
+              {
+                RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.south, textureXUvStart, textureXUvEnd);
+              }
+              if (z == forward - 1 ? northernChunk?.GetBlock(x, y, 0) == null : terrainMap[x, y, z + 1] == null)
+              {
+                RenderQuad(vertices, triangles, uv, ref vc, ref tc, x, y, z, offset, Orientation.north, textureXUvStart, textureXUvEnd);
+              }
             }
           }
         }
+
+        if (Time.deltaTime > 1f / 60f)
+        {
+          yield return null;
+        }
       }
-    }
 
-    var newUv = new Vector2[vc];
+      var newUv = new Vector2[vc];
 
-    for (int i = 0; i < vc; i++)
-    {
-      newUv[i] = uv[i];
-    }
+      for (int i = 0; i < vc; i++)
+      {
+        newUv[i] = uv[i];
+      }
 
-    var newTriangles = new int[tc];
+      var newTriangles = new int[tc];
 
-    for (int i = 0; i < tc; i++)
-    {
-      newTriangles[i] = triangles[i];
-    }
+      for (int i = 0; i < tc; i++)
+      {
+        newTriangles[i] = triangles[i];
+      }
 
-    var newVertices = new Vector3[vc];
+      var newVertices = new Vector3[vc];
 
-    for (int i = 0; i < vc; i++)
-    {
-      newVertices[i] = vertices[i];
-    }
+      for (int i = 0; i < vc; i++)
+      {
+        newVertices[i] = vertices[i];
+      }
 
-    mesh.vertices = newVertices;
-    mesh.triangles = newTriangles;
-    mesh.uv = newUv;
+      mesh.vertices = newVertices;
+      mesh.triangles = newTriangles;
+      mesh.uv = newUv;
 
-    mesh.RecalculateNormals();
+      mesh.RecalculateNormals();
 
-    if (meshCollider != null && meshFilter != null)
-    {
-      meshCollider.sharedMesh = mesh;
-      meshFilter.mesh = mesh;
+      if (meshCollider != null && meshFilter != null)
+      {
+        meshCollider.sharedMesh = mesh;
+        meshFilter.mesh = mesh;
+      }
     }
   }
 
@@ -231,16 +234,14 @@ public class ChunkScript : MonoBehaviour
     tc += 6;
   }
 
-  public void SetBlock(int x, int y, int z, Block? block)
+  public System.Collections.IEnumerator SetBlock(int x, int y, int z, Block? block)
   {
-    if (terrainMap == null)
+    if (terrainMap != null)
     {
-      return;
+      terrainMap[x, y, z] = block;
+
+      yield return StartCoroutine(CreateMesh());
     }
-
-    terrainMap[x, y, z] = block;
-
-    CreateMesh();
   }
 
   void Awake()
