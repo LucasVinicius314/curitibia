@@ -1,0 +1,3 @@
+[submodule "libs/p2p-signaling-server"]
+	path = libs/p2p-signaling-server
+	url = https://github.com/LucasVinicius314/p2p-signaling-server

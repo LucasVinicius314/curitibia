@@ -1,0 +1,61 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://src/Player/PlayerController.cs" id="1"]
+[ext_resource type="Resource" path="res://data/player_tuning.tres" id="2"]
+[ext_resource type="Script" path="res://src/Player/PlayerVisual.cs" id="3"]
+[ext_resource type="Script" path="res://src/Player/BlockInteractor.cs" id="4"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_1"]
+properties/0/path = NodePath(".:SyncPosition")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:SyncYaw")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath(".:SyncPitch")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:SyncVelocity")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+properties/4/path = NodePath(".:SyncGrounded")
+properties/4/spawn = true
+properties/4/replication_mode = 1
+
+[node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("CameraPivot", "Camera", "Visual", "Interactor")]
+collision_layer = 2
+collision_mask = 1
+floor_snap_length = 0.35
+script = ExtResource("1")
+Tuning = ExtResource("2")
+CameraPivot = NodePath("CameraPivot")
+Camera = NodePath("CameraPivot/Camera3D")
+Visual = NodePath("Visual")
+Interactor = NodePath("BlockInteractor")
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_1")
+
+[node name="CameraPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+current = false
+fov = 80.0
+near = 0.05
+
+[node name="Visual" type="Node3D" parent="."]
+script = ExtResource("3")
+
+[node name="BlockInteractor" type="Node" parent="." node_paths=PackedStringArray("Player", "Camera")]
+script = ExtResource("4")
+Player = NodePath("..")
+Camera = NodePath("../CameraPivot/Camera3D")
+
+[node name="Synchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_1")

@@ -1,3 +1,16 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# .NET
+.mono/
+bin/
+obj/
+*.user
+
+# Builds and local tooling
+/build/
+.godot-path
+
+# WebRTC native extension: downloaded by scripts/fetch-webrtc (not committed, about 90 MB)
+/addons/webrtc_native/

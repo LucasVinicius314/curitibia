@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Curitibia.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Engine-free game code only (no Godot types), linked so the tests do not need the Godot SDK. -->
+    <Compile Include="../../src/Core/VoxelMath.cs" Link="Linked/VoxelMath.cs" />
+    <Compile Include="../../src/Core/VoxelRaycast.cs" Link="Linked/VoxelRaycast.cs" />
+    <Compile Include="../../src/Core/GradientNoise.cs" Link="Linked/GradientNoise.cs" />
+    <Compile Include="../../src/World/Blocks.cs" Link="Linked/Blocks.cs" />
+    <Compile Include="../../src/World/WorldGenerator.cs" Link="Linked/WorldGenerator.cs" />
+    <Compile Include="../../src/World/ChunkMesher.cs" Link="Linked/ChunkMesher.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+</Project>

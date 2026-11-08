@@ -1,0 +1,19 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>Curitibia</RootNamespace>
+    <AssemblyName>Curitibia</AssemblyName>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <!--
+      The p2p-signaling-server submodule: compile only the client library's sources, and into THIS assembly. Godot runs
+      script classes (and their _Process) only from the game assembly, so a separately compiled library silently does
+      nothing; never use a ProjectReference to it. See libs/p2p-signaling-server/docs/integration-guide.md.
+    -->
+    <Compile Remove="libs/**" />
+    <Compile Include="libs/p2p-signaling-server/clients/godot-csharp/src/**/*.cs" />
+  </ItemGroup>
+</Project>

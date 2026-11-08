@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="PlayerTuning" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/Player/PlayerTuning.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+Speed = 5.0
+Responsiveness = 12.0
+AirResponsiveness = 3.0
+JumpVelocity = 5.5
+StepHeight = 1.05
+MouseSensitivity = 0.0025
+StickSensitivity = 3.2
+MaxPitch = 1.54
+KillHeight = -30.0

@@ -11,8 +11,14 @@ config_version=5
 [application]
 
 config/name="Curitibia"
-config/features=PackedStringArray("4.7", "Forward Plus")
+run/main_scene="res://scenes/menu.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+Game="*res://src/Core/Game.cs"
+NetSession="*res://src/Net/NetSession.cs"
 
 [display]
 
@@ -22,6 +28,13 @@ window/stretch/aspect="expand"
 [dotnet]
 
 project/assembly_name="Curitibia"
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="player"
+3d_physics/layer_3="enemy"
+3d_physics/layer_4="projectile"
 
 [physics]
 
