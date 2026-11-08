@@ -1,4 +1,3 @@
-using System;
 using Curitibia.Core;
 using Curitibia.World;
 using Godot;
@@ -6,9 +5,10 @@ using Godot;
 namespace Curitibia.Player;
 
 /// <summary>
-/// Breaking and placing blocks from the camera: a voxel ray walk (no physics needed, and it gives the face normal for
-/// free), a wireframe-ish highlight on the targeted voxel, and the selected block. Edits go through
-/// Terrain.RequestSetBlock, which is where the network decides who applies them.
+/// Targeting for block tools: a voxel ray walk from the eye along the camera (no physics needed, and it gives the face
+/// normal for free) and a translucent highlight on the targeted voxel while the held item wants it. It does no input:
+/// the held item's behavior calls BreakTarget / PlaceTarget, which go through Terrain.RequestSetBlock, where the network
+/// decides who applies the edit.
 /// </summary>
 public partial class BlockInteractor : Node
 {
@@ -17,7 +17,7 @@ public partial class BlockInteractor : Node
   [Export] public PlayerController Player { get; set; } = null!;
   [Export] public Camera3D Camera { get; set; } = null!;
 
-  static readonly BoxMesh highlightMesh = new() { Size = Vector3.One * 1.006f };
+  static readonly BoxMesh highlightMesh = new() { Size = Vector3.One * VoxelMath.BlockSize * 1.012f };
 
   static readonly StandardMaterial3D highlightMaterial = new()
   {
@@ -28,20 +28,16 @@ public partial class BlockInteractor : Node
   };
 
   MeshInstance3D? highlight;
-  int selected;
-
-  /// <summary>The block that will be placed.</summary>
-  public byte SelectedBlock => BlockIds.Placeable[selected];
-
-  /// <summary>Raised when the selected block changes (the HUD listens).</summary>
-  public event Action<byte>? SelectionChanged;
+  bool hasTarget;
+  Vector3I targetVoxel;
+  Vector3I targetNormal;
 
   public override void _Ready()
   {
     if (!Player.IsLocal)
     {
       SetProcess(false);
-      SetProcessUnhandledInput(false);
+
       return;
     }
 
@@ -55,89 +51,68 @@ public partial class BlockInteractor : Node
     };
 
     AddChild(highlight);
-    CallDeferred(MethodName.AnnounceSelection);
-  }
-
-  void AnnounceSelection()
-  {
-    SelectionChanged?.Invoke(SelectedBlock);
-  }
-
-  public override void _UnhandledInput(InputEvent @event)
-  {
-    if (Input.MouseMode != Input.MouseModeEnum.Captured)
-    {
-      return;
-    }
-
-    if (@event.IsActionPressed(Actions.NextBlock))
-    {
-      Select(selected + 1);
-    }
-    else if (@event.IsActionPressed(Actions.PrevBlock))
-    {
-      Select(selected - 1);
-    }
-    else if (@event is InputEventKey { Pressed: true, Echo: false } key && key.PhysicalKeycode >= Key.Key1 && key.PhysicalKeycode < Key.Key1 + BlockIds.Placeable.Length)
-    {
-      Select((int)(key.PhysicalKeycode - Key.Key1));
-    }
-  }
-
-  void Select(int index)
-  {
-    var count = BlockIds.Placeable.Length;
-    selected = ((index % count) + count) % count;
-    SelectionChanged?.Invoke(SelectedBlock);
   }
 
   public override void _Process(double delta)
   {
     var terrain = Terrain.Instance;
+    var wanted = Player.Inventory.Held?.Behavior?.WantsBlockTarget == true && !Player.Health.IsDead;
 
-    if (terrain == null || highlight == null || Player.Health.IsDead)
+    hasTarget = false;
+
+    if (terrain != null && wanted && TryTarget(terrain, out targetVoxel, out targetNormal))
+    {
+      hasTarget = true;
+    }
+
+    if (highlight == null)
     {
       return;
     }
 
-    if (!TryTarget(terrain, out var voxel, out var normal))
+    highlight.Visible = hasTarget;
+
+    if (hasTarget)
     {
-      highlight.Visible = false;
+      highlight.GlobalPosition = new Vector3(VoxelMath.VoxelCenter(targetVoxel.X), VoxelMath.VoxelCenter(targetVoxel.Y), VoxelMath.VoxelCenter(targetVoxel.Z));
+    }
+  }
+
+  /// <summary>Breaks the voxel under the crosshair, if any.</summary>
+  public void BreakTarget()
+  {
+    if (hasTarget)
+    {
+      Terrain.Instance?.RequestSetBlock(targetVoxel, BlockIds.Air);
+    }
+  }
+
+  /// <summary>Places a block against the face under the crosshair, unless it would overlap the player.</summary>
+  public void PlaceTarget(byte block)
+  {
+    if (!hasTarget || targetNormal == Vector3I.Zero)
+    {
       return;
     }
 
-    highlight.Visible = true;
-    highlight.GlobalPosition = new Vector3(voxel.X + 0.5f, voxel.Y + 0.5f, voxel.Z + 0.5f);
+    var target = targetVoxel + targetNormal;
 
-    if (Input.MouseMode != Input.MouseModeEnum.Captured)
+    if (VoxelMath.InWorldHeight(target.Y) && !OverlapsPlayer(target))
     {
-      return;
-    }
-
-    if (Input.IsActionJustPressed(Actions.BreakBlock))
-    {
-      terrain.RequestSetBlock(voxel, BlockIds.Air);
-    }
-    else if (Input.IsActionJustPressed(Actions.PlaceBlock) && normal != Vector3I.Zero)
-    {
-      var target = voxel + normal;
-
-      if (VoxelMath.InWorldHeight(target.Y) && !OverlapsPlayer(target))
-      {
-        terrain.RequestSetBlock(target, SelectedBlock);
-      }
+      Terrain.Instance?.RequestSetBlock(target, block);
     }
   }
 
   bool TryTarget(Terrain terrain, out Vector3I voxel, out Vector3I normal)
   {
-    var origin = Camera.GlobalPosition;
+    // From the eye, along the camera's direction: in third person the camera itself sits behind the player.
+    var origin = Player.EyePosition / VoxelMath.BlockSize;
     var direction = -Camera.GlobalTransform.Basis.Z;
 
     var hit = VoxelRaycast.Cast(
       origin.X, origin.Y, origin.Z,
       direction.X, direction.Y, direction.Z,
-      Reach,
+      Reach / VoxelMath.BlockSize,
       terrain.IsSolid,
       out var hx, out var hy, out var hz,
       out var nx, out var ny, out var nz);
@@ -150,7 +125,7 @@ public partial class BlockInteractor : Node
 
   bool OverlapsPlayer(Vector3I voxel)
   {
-    var cell = new Aabb(new Vector3(voxel.X, voxel.Y, voxel.Z), Vector3.One);
+    var cell = new Aabb(new Vector3(voxel.X, voxel.Y, voxel.Z) * VoxelMath.BlockSize, Vector3.One * VoxelMath.BlockSize);
 
     return cell.Intersects(Player.BodyBounds);
   }

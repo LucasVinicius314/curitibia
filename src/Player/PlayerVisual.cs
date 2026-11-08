@@ -49,6 +49,42 @@ public partial class PlayerVisual : Node3D
   float phaseOffset;
   bool ghost;
 
+  bool shadowOnly;
+
+  /// <summary>
+  /// Draws only the shadow of the body (first person: you see your own shadow, not the model around the camera). Applies to
+  /// every mesh below, held items included.
+  /// </summary>
+  public bool ShadowOnly
+  {
+    get => shadowOnly;
+    set
+    {
+      if (shadowOnly == value)
+      {
+        return;
+      }
+
+      shadowOnly = value;
+      RefreshShadowMode();
+    }
+  }
+
+  /// <summary>Re-applies the shadow mode to every mesh (call after adding meshes, such as a new held item).</summary>
+  public void RefreshShadowMode()
+  {
+    var mode = shadowOnly ? GeometryInstance3D.ShadowCastingSetting.ShadowsOnly : GeometryInstance3D.ShadowCastingSetting.On;
+
+    // Only on a mode change or a new held item, never per frame.
+    foreach (var node in FindChildren("*", "MeshInstance3D", true, false))
+    {
+      ((MeshInstance3D)node).CastShadow = mode;
+    }
+  }
+
+  /// <summary>Where held items attach (the chest, so they lean and swing with the body). Valid after _Ready.</summary>
+  public Node3D HeldItemAnchor => chest;
+
   /// <summary>Draws the body as the translucent Fresnel ghost (a dead player).</summary>
   public bool Ghost
   {

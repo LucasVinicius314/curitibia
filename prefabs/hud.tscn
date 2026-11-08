@@ -2,11 +2,10 @@
 
 [ext_resource type="Script" path="res://src/UI/Hud.cs" id="1"]
 
-[node name="Hud" type="CanvasLayer" node_paths=PackedStringArray("InfoLabel", "BlockLabel", "HealthLabel", "BannerLabel", "RoomLabel")]
+[node name="Hud" type="CanvasLayer" node_paths=PackedStringArray("InfoLabel", "BlockLabel", "BannerLabel", "RoomLabel")]
 script = ExtResource("1")
 InfoLabel = NodePath("Info")
 BlockLabel = NodePath("Block")
-HealthLabel = NodePath("Health")
 BannerLabel = NodePath("Banner")
 RoomLabel = NodePath("Room")
 
@@ -16,13 +15,6 @@ offset_top = 12.0
 offset_right = 420.0
 offset_bottom = 38.0
 text = "FPS"
-
-[node name="Health" type="Label" parent="."]
-offset_left = 16.0
-offset_top = 40.0
-offset_right = 220.0
-offset_bottom = 66.0
-text = "HP"
 
 [node name="Room" type="Label" parent="."]
 anchors_preset = 1
@@ -74,9 +66,9 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -200.0
-offset_top = -48.0
+offset_top = -90.0
 offset_right = 200.0
-offset_bottom = -22.0
+offset_bottom = -66.0
 grow_horizontal = 2
 grow_vertical = 0
 horizontal_alignment = 1

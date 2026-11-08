@@ -371,30 +371,7 @@ public partial class MainMenu : Control
 
     page.AddChild(Ui.Label("Settings", Ui.Heading));
 
-    page.AddChild(Ui.Label("Field of view", Ui.Subtle));
-
-    var fovRow = Ui.Row(14);
-    var fovValue = Ui.Label($"{GameSettings.FieldOfView:0}°");
-    fovValue.CustomMinimumSize = new Vector2(56f, 0f);
-    var fov = new HSlider
-    {
-      MinValue = GameSettings.MinFieldOfView,
-      MaxValue = GameSettings.MaxFieldOfView,
-      Step = 1,
-      Value = GameSettings.FieldOfView,
-      SizeFlagsHorizontal = SizeFlags.ExpandFill,
-      SizeFlagsVertical = SizeFlags.ShrinkCenter,
-      CustomMinimumSize = new Vector2(0f, 28f),
-    };
-    fov.ValueChanged += value =>
-    {
-      GameSettings.FieldOfView = (float)value;
-      fovValue.Text = $"{value:0}°";
-    };
-    fovRow.AddChild(fov);
-    fovRow.AddChild(fovValue);
-    page.AddChild(fovRow);
-    page.AddChild(Ui.Paragraph("Vertical field of view. Higher shows more to the sides (90 is about 119 degrees across on a 16:9 screen).", Ui.Subtle));
+    page.AddChild(SettingsPanel.Build(showControls: false));
 
     page.AddChild(Ui.Gap(4f));
     page.AddChild(Ui.Label("Server address", Ui.Subtle));

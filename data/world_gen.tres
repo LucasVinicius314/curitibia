@@ -4,10 +4,10 @@
 
 [resource]
 script = ExtResource("1")
-Frequency = 0.04
-Amplitude = 10.0
-BaseHeight = 16.0
+Frequency = 0.02
+Amplitude = 20.0
+BaseHeight = 50.0
 Octaves = 2
-ViewRadius = 3
+ViewRadius = 12
 UnloadMargin = 2
-MeshAppliesPerFrame = 2
+MeshAppliesPerFrame = 3

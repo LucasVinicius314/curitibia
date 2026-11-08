@@ -134,7 +134,7 @@ public partial class Main : Node3D
     PlayerSpawner.Spawn(new Godot.Collections.Dictionary
     {
       ["peer"] = peerId,
-      ["pos"] = PlayerController.SpawnPoint(slot * 2, 0),
+      ["pos"] = PlayerController.SpawnPoint(slot * 4, 0),
     });
   }
 

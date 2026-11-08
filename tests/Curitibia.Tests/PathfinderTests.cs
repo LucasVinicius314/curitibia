@@ -110,4 +110,14 @@ public class PathfinderTests
 
     Assert.Equal((3, 0, 3), found);
   }
+
+  [Fact]
+  public void A_taller_body_needs_more_headroom()
+  {
+    // A ceiling two cells above the floor at x = 3: a 2-cell body fits under it, a 4-cell body does not.
+    bool Low(int x, int y, int z) => y < 0 || (x == 3 && y == 2);
+
+    Assert.True(VoxelPathfinder.IsStandable(Low, 3, 0, 0, 2));
+    Assert.False(VoxelPathfinder.IsStandable(Low, 3, 0, 0, 4));
+  }
 }

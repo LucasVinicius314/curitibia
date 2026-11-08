@@ -62,9 +62,11 @@ public static class ChunkMesher
   /// <param name="blocks">The chunk's voxels (VoxelMath.Index layout).</param>
   /// <param name="neighbours">Neighbour chunk voxels indexed by NeighbourPlusX/MinusX/PlusZ/MinusZ; null entries count as solid.</param>
   /// <param name="tileByBlock">Atlas tile per block id (-1 = not drawn).</param>
+  /// <param name="topTiles">Optional tile per block id for the top face (-1 or missing = the side tile).</param>
+  /// <param name="bottomTiles">Same for the bottom face.</param>
   /// <param name="tileCount">Tiles in the atlas (laid out in one row).</param>
   /// <param name="uvInset">UV inset per tile edge (fraction of the whole atlas width) to avoid bleeding between tiles.</param>
-  public static MeshData Build(byte[] blocks, byte[]?[] neighbours, int[] tileByBlock, int tileCount, float uvInset)
+  public static MeshData Build(byte[] blocks, byte[]?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null)
   {
     var positions = new List<float>(4096);
     var normals = new List<float>(4096);
@@ -72,7 +74,15 @@ public static class ChunkMesher
     var indices = new List<int>(4096);
 
     const int size = VoxelMath.ChunkSize;
-    const int height = VoxelMath.ChunkHeight;
+    // Most of a tall column is air: only walk up to the highest layer that has anything in it.
+    var top = blocks.AsSpan().LastIndexOfAnyExcept(BlockIds.Air);
+
+    if (top < 0)
+    {
+      return new MeshData();
+    }
+
+    var height = top / (size * size) + 1;
 
     for (int y = 0; y < height; y++)
     {
@@ -94,9 +104,6 @@ public static class ChunkMesher
             continue;
           }
 
-          var u0 = (float)tile / tileCount + uvInset;
-          var u1 = (float)(tile + 1) / tileCount - uvInset;
-
           for (int f = 0; f < Faces.Length; f++)
           {
             var face = Faces[f];
@@ -105,6 +112,20 @@ public static class ChunkMesher
             {
               continue;
             }
+
+            var faceTile = tile;
+
+            if (f == 2 && topTiles != null && id < topTiles.Length && topTiles[id] >= 0)
+            {
+              faceTile = topTiles[id];
+            }
+            else if (f == 3 && bottomTiles != null && id < bottomTiles.Length && bottomTiles[id] >= 0)
+            {
+              faceTile = bottomTiles[id];
+            }
+
+            var u0 = (float)faceTile / tileCount + uvInset;
+            var u1 = (float)(faceTile + 1) / tileCount - uvInset;
 
             var baseVertex = positions.Count / 3;
 
@@ -167,7 +188,7 @@ public static class ChunkMesher
 
     if (x >= 0 && x < size && z >= 0 && z < size)
     {
-      return blocks[VoxelMath.Index(x, y, z)] != BlockIds.Air;
+      return VoxelMath.Get(blocks, x, y, z) != BlockIds.Air;
     }
 
     byte[]? other;
@@ -198,6 +219,6 @@ public static class ChunkMesher
       return true;
     }
 
-    return other[VoxelMath.Index(x, y, z)] != BlockIds.Air;
+    return VoxelMath.Get(other, x, y, z) != BlockIds.Air;
   }
 }

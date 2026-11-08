@@ -16,10 +16,14 @@ public static class Actions
   public static readonly StringName LookRight = "look_right";
   public static readonly StringName LookUp = "look_up";
   public static readonly StringName LookDown = "look_down";
-  public static readonly StringName NextBlock = "next_block";
-  public static readonly StringName PrevBlock = "prev_block";
+  public static readonly StringName NextItem = "next_block";
+  public static readonly StringName PrevItem = "prev_block";
   public static readonly StringName Pause = "pause";
   public static readonly StringName Roster = "roster";
+  public static readonly StringName Sprint = "sprint";
+  public static readonly StringName ToggleView = "toggle_view";
+  public static readonly StringName ToggleFly = "toggle_fly";
+  public static readonly StringName FlyDown = "fly_down";
 }
 
 /// <summary>
@@ -41,6 +45,10 @@ public partial class Game : Node
     AddKeys(Actions.Jump, Key.Space);
     AddKeys(Actions.Pause, Key.Escape);
     AddKeys(Actions.Roster, Key.Tab);
+    AddKeys(Actions.Sprint, Key.Shift);
+    AddKeys(Actions.ToggleView, Key.V);
+    AddKeys(Actions.ToggleFly, Key.F);
+    AddKeys(Actions.FlyDown, Key.Ctrl, Key.C);
 
     AddAxis(Actions.MoveForward, JoyAxis.LeftY, -1f);
     AddAxis(Actions.MoveBack, JoyAxis.LeftY, 1f);
@@ -53,13 +61,15 @@ public partial class Game : Node
     AddButton(Actions.Jump, JoyButton.A);
     AddButton(Actions.Pause, JoyButton.Start);
     AddButton(Actions.Roster, JoyButton.Back);
-    AddButton(Actions.NextBlock, JoyButton.RightShoulder);
-    AddButton(Actions.PrevBlock, JoyButton.LeftShoulder);
+    AddButton(Actions.Sprint, JoyButton.LeftStick);
+    AddButton(Actions.ToggleView, JoyButton.RightStick);
+    AddButton(Actions.NextItem, JoyButton.RightShoulder);
+    AddButton(Actions.PrevItem, JoyButton.LeftShoulder);
 
     AddMouse(Actions.BreakBlock, MouseButton.Left);
     AddMouse(Actions.PlaceBlock, MouseButton.Right);
-    AddMouse(Actions.NextBlock, MouseButton.WheelDown);
-    AddMouse(Actions.PrevBlock, MouseButton.WheelUp);
+    AddMouse(Actions.NextItem, MouseButton.WheelDown);
+    AddMouse(Actions.PrevItem, MouseButton.WheelUp);
     AddAxis(Actions.BreakBlock, JoyAxis.TriggerRight, 1f);
     AddAxis(Actions.PlaceBlock, JoyAxis.TriggerLeft, 1f);
   }

@@ -4,14 +4,14 @@ using System.Collections.Generic;
 namespace Curitibia.Enemies;
 
 /// <summary>
-/// A* over walkable voxel cells (a cell is where a body's feet are). Engine-free and tested. Used instead of a baked
+/// A* over walkable voxel cells (a cell is where a body's feet are; the body is `body` cells tall). Engine-free and tested. Used instead of a baked
 /// navigation mesh because the world streams and players edit it: there is nothing to rebake, the next query simply
 /// sees the new blocks. Moves: 8 directions on the same level, one block up (needs headroom to jump) and up to
 /// MaxDrop blocks down.
 /// </summary>
 public static class VoxelPathfinder
 {
-  public const int MaxDrop = 3;
+  public const int MaxDrop = 4;
 
   static readonly (int dx, int dz)[] Directions =
   {
@@ -20,18 +20,18 @@ public static class VoxelPathfinder
   };
 
   /// <summary>Feet can stand here: the cell and the one above are free and there is ground below.</summary>
-  public static bool IsStandable(Func<int, int, int, bool> isSolid, int x, int y, int z)
+  public static bool IsStandable(Func<int, int, int, bool> isSolid, int x, int y, int z, int body = 2)
   {
-    return !isSolid(x, y, z) && !isSolid(x, y + 1, z) && isSolid(x, y - 1, z);
+    return !BodyBlocked(isSolid, x, y, z, body) && isSolid(x, y - 1, z);
   }
 
   /// <summary>Finds the standable cell nearest to (x, y, z) in the same column (searching down, then up), or null.</summary>
-  public static (int x, int y, int z)? SnapToStandable(Func<int, int, int, bool> isSolid, int x, int y, int z, int range = 4)
+  public static (int x, int y, int z)? SnapToStandable(Func<int, int, int, bool> isSolid, int x, int y, int z, int range = 4, int body = 2)
   {
     for (int d = 0; d <= range; d++)
     {
-      if (IsStandable(isSolid, x, y - d, z)) return (x, y - d, z);
-      if (d > 0 && IsStandable(isSolid, x, y + d, z)) return (x, y + d, z);
+      if (IsStandable(isSolid, x, y - d, z, body)) return (x, y - d, z);
+      if (d > 0 && IsStandable(isSolid, x, y + d, z, body)) return (x, y + d, z);
     }
 
     return null;
@@ -44,7 +44,8 @@ public static class VoxelPathfinder
     Func<int, int, int, bool> isSolid,
     (int x, int y, int z) start,
     (int x, int y, int z) goal,
-    int maxExpansions = 3000)
+    int maxExpansions = 3000,
+    int body = 2)
   {
     if (start == goal)
     {
@@ -77,12 +78,12 @@ public static class VoxelPathfinder
         var diagonal = dx != 0 && dz != 0;
 
         // A diagonal must not cut a corner: both orthogonal neighbours at body height have to be open.
-        if (diagonal && (BodyBlocked(isSolid, current.x + dx, current.y, current.z) || BodyBlocked(isSolid, current.x, current.y, current.z + dz)))
+        if (diagonal && (BodyBlocked(isSolid, current.x + dx, current.y, current.z, body) || BodyBlocked(isSolid, current.x, current.y, current.z + dz, body)))
         {
           continue;
         }
 
-        if (!TryStep(isSolid, current, dx, dz, out var next, out var extra))
+        if (!TryStep(isSolid, current, dx, dz, body, out var next, out var extra))
         {
           continue;
         }
@@ -101,26 +102,35 @@ public static class VoxelPathfinder
     return null;
   }
 
-  static bool BodyBlocked(Func<int, int, int, bool> isSolid, int x, int y, int z)
+  /// <summary>Any of the <paramref name="body"/> cells standing up from (x, y, z) is solid.</summary>
+  static bool BodyBlocked(Func<int, int, int, bool> isSolid, int x, int y, int z, int body)
   {
-    return isSolid(x, y, z) || isSolid(x, y + 1, z);
+    for (int i = 0; i < body; i++)
+    {
+      if (isSolid(x, y + i, z))
+      {
+        return true;
+      }
+    }
+
+    return false;
   }
 
-  static bool TryStep(Func<int, int, int, bool> isSolid, (int x, int y, int z) from, int dx, int dz, out (int x, int y, int z) next, out float extra)
+  static bool TryStep(Func<int, int, int, bool> isSolid, (int x, int y, int z) from, int dx, int dz, int body, out (int x, int y, int z) next, out float extra)
   {
     var nx = from.x + dx;
     var nz = from.z + dz;
     extra = 0f;
 
     // Same level.
-    if (IsStandable(isSolid, nx, from.y, nz))
+    if (IsStandable(isSolid, nx, from.y, nz, body))
     {
       next = (nx, from.y, nz);
       return true;
     }
 
     // One block up: needs room above the start to jump and room to arrive.
-    if (!isSolid(from.x, from.y + 2, from.z) && IsStandable(isSolid, nx, from.y + 1, nz) && !isSolid(nx, from.y + 2, nz))
+    if (!isSolid(from.x, from.y + body, from.z) && IsStandable(isSolid, nx, from.y + 1, nz, body))
     {
       next = (nx, from.y + 1, nz);
       extra = 0.6f;
@@ -128,13 +138,13 @@ public static class VoxelPathfinder
     }
 
     // Drop: the way down (the two cells of the body) must be open.
-    if (!BodyBlocked(isSolid, nx, from.y, nz))
+    if (!BodyBlocked(isSolid, nx, from.y, nz, body))
     {
       for (int drop = 1; drop <= MaxDrop; drop++)
       {
         var y = from.y - drop;
 
-        if (IsStandable(isSolid, nx, y, nz))
+        if (IsStandable(isSolid, nx, y, nz, body))
         {
           next = (nx, y, nz);
           extra = 0.4f * drop;

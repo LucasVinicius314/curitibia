@@ -15,6 +15,7 @@
     <Compile Include="../../src/World/Blocks.cs" Link="Linked/Blocks.cs" />
     <Compile Include="../../src/World/WorldGenerator.cs" Link="Linked/WorldGenerator.cs" />
     <Compile Include="../../src/World/ChunkMesher.cs" Link="Linked/ChunkMesher.cs" />
+    <Compile Include="../../src/World/Features/TreeFeature.cs" Link="Linked/TreeFeature.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

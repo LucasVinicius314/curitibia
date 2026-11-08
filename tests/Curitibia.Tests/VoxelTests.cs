@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Curitibia.Core;
 using Curitibia.World;
+using Curitibia.World.Features;
 using Xunit;
 
 namespace Curitibia.Tests;
@@ -30,6 +31,23 @@ public class VoxelMathTests
   {
     Assert.Equal(-1, VoxelMath.FloorToInt(-0.01f));
     Assert.Equal(0, VoxelMath.FloorToInt(0.99f));
+  }
+
+  [Fact]
+  public void World_and_voxel_coordinates_use_half_metre_blocks()
+  {
+    Assert.Equal(0, VoxelMath.WorldToVoxel(0.49f));
+    Assert.Equal(1, VoxelMath.WorldToVoxel(0.5f));
+    Assert.Equal(-1, VoxelMath.WorldToVoxel(-0.01f));
+    Assert.Equal(1.25f, VoxelMath.VoxelCenter(2));
+    Assert.Equal(1f, VoxelMath.VoxelToWorld(2));
+  }
+
+  [Fact]
+  public void A_tower_fits_in_a_column()
+  {
+    Assert.True(VoxelMath.InWorldHeight(VoxelMath.ChunkHeight - 1));
+    Assert.True(VoxelMath.ChunkHeight * VoxelMath.BlockSize >= 100f);
   }
 }
 
@@ -107,7 +125,7 @@ public class WorldGeneratorTests
   }
 
   [Fact]
-  public void Column_has_grass_on_top_over_stone()
+  public void Column_has_grass_on_top_over_soil_over_stone()
   {
     var g = Make(7);
     var blocks = g.GenerateChunk(0, 0);
@@ -119,6 +137,7 @@ public class WorldGeneratorTests
     if (h > 1)
     {
       Assert.Equal(BlockIds.Stone, blocks[VoxelMath.Index(4, h - 2, 9)]);
+    Assert.Equal(BlockIds.Stone, blocks[VoxelMath.Index(4, 0, 9)]);
     }
   }
 }
@@ -223,5 +242,114 @@ public class ChunkMesherTests
     var mesh = Mesh(blocks);
 
     Assert.All(mesh.Uvs, uv => Assert.InRange(uv, 0f, 1f));
+  }
+}
+
+public class TallChunkMeshTests
+{
+  [Fact]
+  public void A_block_high_in_a_tall_column_is_meshed_and_an_empty_column_is_not()
+  {
+    var empty = ChunkMesher.Build(new byte[VoxelMath.ChunkVolume], new byte[]?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+    Assert.Equal(0, empty.TriangleCount);
+
+    var blocks = new byte[VoxelMath.ChunkVolume];
+    blocks[VoxelMath.Index(5, VoxelMath.ChunkHeight - 1, 5)] = BlockIds.Stone;
+    var tower = ChunkMesher.Build(blocks, new byte[]?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+
+    Assert.Equal(12, tower.TriangleCount);
+  }
+}
+
+public class TreeTests
+{
+  const int Seed = 5;
+
+  static WorldGenerator Generator()
+  {
+    return new WorldGenerator(new WorldGenParams(Seed, 0.02f, 20f, 50f, 2));
+  }
+
+  [Fact]
+  public void Whole_trees_appear_even_when_they_cross_chunk_borders()
+  {
+    var generator = Generator();
+    var feature = new TreeFeature(Seed, generator.ColumnHeight);
+    var chunks = new System.Collections.Generic.Dictionary<(int, int), byte[]>();
+
+    byte At(int wx, int y, int wz)
+    {
+      VoxelMath.WorldToChunk(wx, wz, out var cx, out var cz, out var lx, out var lz);
+
+      if (!chunks.TryGetValue((cx, cz), out var blocks))
+      {
+        chunks[(cx, cz)] = blocks = generator.GenerateChunk(cx, cz);
+      }
+
+      return VoxelMath.Get(blocks, lx, y, lz);
+    }
+
+    var trees = 0;
+    var crossing = 0;
+
+    feature.ForTreesNear(-100, -100, 100, 100, tree =>
+    {
+      trees++;
+
+      if (VoxelMath.FloorDiv(tree.X - 4, VoxelMath.ChunkSize) != VoxelMath.FloorDiv(tree.X + 5, VoxelMath.ChunkSize)
+        || VoxelMath.FloorDiv(tree.Z - 4, VoxelMath.ChunkSize) != VoxelMath.FloorDiv(tree.Z + 5, VoxelMath.ChunkSize))
+      {
+        crossing++;
+      }
+
+      for (int x = tree.X - 5; x <= tree.X + 6; x++)
+      {
+        for (int z = tree.Z - 5; z <= tree.Z + 6; z++)
+        {
+          for (int y = tree.BaseY; y < tree.BaseY + tree.TrunkHeight + tree.CanopyRadius + 1; y++)
+          {
+            if (tree.IsTrunk(x, y, z))
+            {
+              Assert.Equal(BlockIds.Wood, At(x, y, z));
+            }
+            else if (tree.IsLeaf(x, y, z))
+            {
+              Assert.NotEqual(BlockIds.Air, At(x, y, z));
+            }
+          }
+        }
+      }
+    });
+
+    Assert.True(trees > 10);
+    Assert.True(crossing > 0);
+  }
+
+  [Fact]
+  public void Generation_is_deterministic_and_the_spawn_is_clear()
+  {
+    var a = Generator().GenerateChunk(0, 0);
+    var b = Generator().GenerateChunk(0, 0);
+
+    Assert.Equal(a, b);
+    Assert.True(a.Length < VoxelMath.ChunkVolume); // trimmed to the layers in use
+
+    var feature = new TreeFeature(Seed, Generator().ColumnHeight);
+    Assert.Equal(0, feature.TopAt(0, 0));
+  }
+
+  [Fact]
+  public void EnsureHeight_grows_by_layers_and_keeps_contents()
+  {
+    var blocks = new byte[VoxelMath.LayerSize * VoxelMath.LayerStep];
+    blocks[5] = 9;
+
+    var same = VoxelMath.EnsureHeight(blocks, 3);
+    var grown = VoxelMath.EnsureHeight(blocks, 40);
+
+    Assert.Same(blocks, same);
+    Assert.Equal(VoxelMath.LayerSize * 48, grown.Length);
+    Assert.Equal(9, grown[5]);
+    Assert.Equal(0, VoxelMath.Get(blocks, 1, 200, 1));
   }
 }

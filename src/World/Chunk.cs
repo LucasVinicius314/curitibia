@@ -25,6 +25,12 @@ public sealed class ChunkBuild
       Indices = data.Indices,
     };
 
+    // The mesher works in voxel units; the world is built from half-metre blocks.
+    for (int i = 0; i < build.Vertices.Length; i++)
+    {
+      build.Vertices[i] *= VoxelMath.BlockSize;
+    }
+
     var faces = new Vector3[data.Indices.Length];
 
     for (int i = 0; i < faces.Length; i++)
@@ -57,7 +63,7 @@ public partial class Chunk : Node3D
   {
     Coord = coord;
     Name = $"Chunk_{coord.X}_{coord.Y}";
-    Position = new Vector3(coord.X * VoxelMath.ChunkSize, 0, coord.Y * VoxelMath.ChunkSize);
+    Position = new Vector3(coord.X * VoxelMath.ChunkSize, 0, coord.Y * VoxelMath.ChunkSize) * VoxelMath.BlockSize;
 
     meshInstance.MaterialOverride = TextureAtlas.ChunkMaterial;
     body.CollisionLayer = GameLayers.World;

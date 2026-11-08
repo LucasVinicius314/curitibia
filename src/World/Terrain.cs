@@ -138,7 +138,7 @@ public partial class Terrain : Node3D
       return BlockIds.Air;
     }
 
-    return entry.Blocks[VoxelMath.Index(lx, wy, lz)];
+    return VoxelMath.Get(entry.Blocks, lx, wy, lz);
   }
 
   public bool IsSolid(int wx, int wy, int wz)
@@ -149,15 +149,15 @@ public partial class Terrain : Node3D
   /// <summary>True when the chunk under a world position has collision, so a body can stand there.</summary>
   public bool HasCollisionAt(Vector3 position)
   {
-    VoxelMath.WorldToChunk(VoxelMath.FloorToInt(position.X), VoxelMath.FloorToInt(position.Z), out var cx, out var cz, out _, out _);
+    VoxelMath.WorldToChunk(VoxelMath.WorldToVoxel(position.X), VoxelMath.WorldToVoxel(position.Z), out var cx, out var cz, out _, out _);
 
     return entries.TryGetValue(new Vector2I(cx, cz), out var entry) && entry.Node != null && entry.Node.HasCollision;
   }
 
-  /// <summary>Terrain surface height (top of the highest solid voxel) from the generator, ignoring edits.</summary>
+  /// <summary>Surface height in world units (top of the highest terrain or tree voxel of voxel column wx, wz) from the generator, ignoring edits.</summary>
   public float SurfaceHeightAt(int wx, int wz)
   {
-    return generator?.ColumnHeight(wx, wz) ?? VoxelMath.ChunkHeight / 2f;
+    return (generator?.SurfaceTop(wx, wz) ?? 40) * VoxelMath.BlockSize;
   }
 
   /// <summary>True when everything wanted around the viewers is meshed and nothing is pending.</summary>
@@ -224,11 +224,13 @@ public partial class Terrain : Node3D
 
     if (entries.TryGetValue(coord, out var entry) && entry.Blocks != null)
     {
-      if (entry.Blocks[index] == id)
+      if (VoxelMath.Get(entry.Blocks, lx, voxel.Y, lz) == id)
       {
         return false; // nothing changes: do not record or announce it
       }
 
+      // Building above the stored layers grows the array (a copy: a worker meshing the old one keeps its snapshot).
+      entry.Blocks = VoxelMath.EnsureHeight(entry.Blocks, voxel.Y);
       entry.Blocks[index] = id;
       entry.Version++;
       BumpBorderNeighbours(coord, lx, lz);
@@ -290,7 +292,7 @@ public partial class Terrain : Node3D
 
   static Vector2I ChunkOf(Vector3 position)
   {
-    VoxelMath.WorldToChunk(VoxelMath.FloorToInt(position.X), VoxelMath.FloorToInt(position.Z), out var cx, out var cz, out _, out _);
+    VoxelMath.WorldToChunk(VoxelMath.WorldToVoxel(position.X), VoxelMath.WorldToVoxel(position.Z), out var cx, out var cz, out _, out _);
 
     return new Vector2I(cx, cz);
   }
@@ -523,6 +525,7 @@ public partial class Terrain : Node3D
       {
         foreach (var (index, id) in chunkEdits)
         {
+          blocks = VoxelMath.EnsureHeight(blocks, index / VoxelMath.LayerSize);
           blocks[index] = id;
         }
       }

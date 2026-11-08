@@ -17,7 +17,11 @@ public static class GameSettings
   /// <summary>Vertical field of view in degrees. Godot's Camera3D fov is vertical: 90 is about 119 degrees across at 16:9.</summary>
   public const float DefaultFieldOfView = 90f;
 
+  public const float MinMouseSensitivity = 0.25f;
+  public const float MaxMouseSensitivity = 3f;
+
   static float? fieldOfView;
+  static float? mouseSensitivity;
 
   /// <summary>Raised after a setting changed.</summary>
   public static event Action? Changed;
@@ -52,6 +56,41 @@ public static class GameSettings
       var config = new ConfigFile();
       config.Load(Path); // keep other values if the file exists
       config.SetValue("view", "fov", (double)clamped);
+      config.Save(Path);
+
+      Changed?.Invoke();
+    }
+  }
+
+  /// <summary>Multiplier on the tuned mouse and stick look speed (1 = as tuned).</summary>
+  public static float MouseSensitivity
+  {
+    get
+    {
+      if (mouseSensitivity == null)
+      {
+        var config = new ConfigFile();
+        var loaded = config.Load(Path) == Error.Ok ? (float)(double)config.GetValue("input", "sensitivity", 1.0) : 1f;
+
+        mouseSensitivity = Mathf.Clamp(loaded, MinMouseSensitivity, MaxMouseSensitivity);
+      }
+
+      return mouseSensitivity.Value;
+    }
+    set
+    {
+      var clamped = Mathf.Clamp(value, MinMouseSensitivity, MaxMouseSensitivity);
+
+      if (Mathf.IsEqualApprox(clamped, MouseSensitivity))
+      {
+        return;
+      }
+
+      mouseSensitivity = clamped;
+
+      var config = new ConfigFile();
+      config.Load(Path);
+      config.SetValue("input", "sensitivity", (double)clamped);
       config.Save(Path);
 
       Changed?.Invoke();

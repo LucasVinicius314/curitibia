@@ -31,11 +31,12 @@ public partial class NetSession : Node
   public const string Bucket = "curitibia";
 
   /// <summary>Bump when the handshake or RPC contract changes incompatibly.</summary>
-  public const int Protocol = 1;
+  public const int Protocol = 2;
 
   const int EditsPerBatch = 400;
   const float MaxEditDistance = 9f;
   const int MaxEditsPerSecond = 30;
+  const float PingIntervalSeconds = 1f;
 
   public static NetSession Instance { get; private set; } = null!;
 
@@ -49,6 +50,12 @@ public partial class NetSession : Node
 
   /// <summary>Peer id to display name for everyone in the room, the host (1) included. Kept in step on every peer.</summary>
   public IReadOnlyDictionary<int, string> Roster => roster;
+  /// <summary>Round trip to the host in milliseconds for a peer (0 for the host itself), or -1 when not measured yet.</summary>
+  public int PingOf(int peer)
+  {
+    return pings.TryGetValue(peer, out var ms) ? ms : -1;
+  }
+
   public bool IsOnline => Kind != SessionKind.Solo;
   public bool IsHost => Kind != SessionKind.Client;
 
@@ -74,6 +81,10 @@ public partial class NetSession : Node
   P2PLobby? lobby;
   Terrain? terrain;
   bool retriedWithoutFriends;
+
+  readonly Dictionary<int, int> pings = new();
+  float pingTimer;
+  int lastPing = -1;
 
   readonly Dictionary<int, string> names = new();
   readonly Dictionary<int, string> roster = new();
@@ -223,6 +234,7 @@ public partial class NetSession : Node
   public void StartSolo()
   {
     Kind = SessionKind.Solo;
+    EnsureOfflinePeer();
     RebuildRoster();
   }
 
@@ -275,8 +287,20 @@ public partial class NetSession : Node
   public void Leave()
   {
     lobby?.Leave();
-    Multiplayer.MultiplayerPeer = null;
+    EnsureOfflinePeer(true);
     ResetState();
+  }
+
+  /// <summary>
+  /// Offline play needs an OfflineMultiplayerPeer: with no peer at all, spawners refuse to spawn and RPCs fail (the world came
+  /// up empty and grey after leaving a session and starting solo again).
+  /// </summary>
+  void EnsureOfflinePeer(bool replace = false)
+  {
+    if (replace || !Multiplayer.HasMultiplayerPeer())
+    {
+      Multiplayer.MultiplayerPeer = new OfflineMultiplayerPeer();
+    }
   }
 
   void End(string reason)
@@ -295,6 +319,8 @@ public partial class NetSession : Node
     synced.Clear();
     editRate.Clear();
     roster.Clear();
+    pings.Clear();
+    lastPing = -1;
 
     if (terrain != null)
     {
@@ -338,6 +364,50 @@ public partial class NetSession : Node
     foreach (var peer in synced)
     {
       RpcId(peer, MethodName.RpcBlockChanged, voxel, id);
+    }
+  }
+
+  // ------------------------------------------------------------------ ping
+
+  public override void _Process(double delta)
+  {
+    if (Kind == SessionKind.Solo)
+    {
+      return;
+    }
+
+    pingTimer -= (float)delta;
+
+    if (pingTimer > 0f)
+    {
+      return;
+    }
+
+    pingTimer = PingIntervalSeconds;
+
+    if (Kind == SessionKind.Client)
+    {
+      // Only once the host has put us in the roster; the previous measurement rides along so the host knows it too.
+      if (roster.Count > 0)
+      {
+        RpcId(1, MethodName.RpcPing, (long)Time.GetTicksMsec(), lastPing);
+      }
+
+      return;
+    }
+
+    pings[1] = 0;
+
+    var wire = new Godot.Collections.Dictionary();
+
+    foreach (var (peer, ms) in pings)
+    {
+      wire[peer] = ms;
+    }
+
+    foreach (var peer in synced)
+    {
+      RpcId(peer, MethodName.RpcPings, wire);
     }
   }
 
@@ -423,6 +493,24 @@ public partial class NetSession : Node
   }
 
   [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcPing(long sentMsec, int reportedPing)
+  {
+    var sender = Multiplayer.GetRemoteSenderId();
+
+    if (!Multiplayer.IsServer() || !synced.Contains(sender))
+    {
+      return;
+    }
+
+    if (reportedPing >= 0)
+    {
+      pings[sender] = Math.Min(reportedPing, 9999);
+    }
+
+    RpcId(sender, MethodName.RpcPong, sentMsec);
+  }
+
+  [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
   void RpcReady()
   {
     if (!Multiplayer.IsServer())
@@ -460,7 +548,7 @@ public partial class NetSession : Node
 
     var position = PlayerPositionProvider?.Invoke(sender);
 
-    if (position == null || position.Value.DistanceTo(new Vector3(voxel.X + 0.5f, voxel.Y + 0.5f, voxel.Z + 0.5f)) > MaxEditDistance)
+    if (position == null || position.Value.DistanceTo(new Vector3(VoxelMath.VoxelCenter(voxel.X), VoxelMath.VoxelCenter(voxel.Y), VoxelMath.VoxelCenter(voxel.Z))) > MaxEditDistance)
     {
       return;
     }
@@ -515,6 +603,35 @@ public partial class NetSession : Node
     }
 
     RosterChanged?.Invoke();
+  }
+
+  [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcPong(long sentMsec)
+  {
+    var rtt = (int)Math.Clamp((long)Time.GetTicksMsec() - sentMsec, 0, 9999);
+
+    // A little smoothing so the number does not flicker.
+    lastPing = lastPing < 0 ? rtt : (int)Math.Round(lastPing * 0.6 + rtt * 0.4);
+    pings[Multiplayer.GetUniqueId()] = lastPing;
+  }
+
+  [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcPings(Godot.Collections.Dictionary received)
+  {
+    var own = Multiplayer.GetUniqueId();
+    var mine = pings.TryGetValue(own, out var m) ? m : -1;
+
+    pings.Clear();
+
+    foreach (var key in received.Keys)
+    {
+      pings[key.AsInt32()] = received[key].AsInt32();
+    }
+
+    if (mine >= 0)
+    {
+      pings[own] = mine; // our own measurement is fresher than what the host last heard
+    }
   }
 
   [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

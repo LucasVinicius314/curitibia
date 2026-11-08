@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Curitibia.Core;
+using Curitibia.Items;
 using Curitibia.Net;
 using Curitibia.Player;
 using Curitibia.World;
@@ -20,18 +21,23 @@ public partial class Hud : CanvasLayer
 
   [Export] public Label InfoLabel { get; set; } = null!;
   [Export] public Label BlockLabel { get; set; } = null!;
-  [Export] public Label HealthLabel { get; set; } = null!;
   [Export] public Label BannerLabel { get; set; } = null!;
   [Export] public Label RoomLabel { get; set; } = null!;
 
-  readonly Dictionary<int, Label> rosterHp = new();
-  readonly Dictionary<int, Label> pauseHp = new();
+  readonly Dictionary<int, (Label hp, Label ping)> rosterRowsByPeer = new();
+  readonly Dictionary<int, (Label hp, Label ping)> pauseRowsByPeer = new();
   Dictionary<int, string> lastRoster = new();
 
   NetSession session = null!;
   PlayerController? player;
 
   Control root = null!;
+  Hotbar hotbar = null!;
+  ProgressBar hpBar = null!;
+  StyleBoxFlat hpFill = null!;
+  Label hpText = null!;
+  int shownHp = -1;
+  int shownMaxHp = -1;
   PanelContainer toastPanel = null!;
   Label toastLabel = null!;
   Tween? toastTween;
@@ -42,6 +48,8 @@ public partial class Hud : CanvasLayer
   Control pause = null!;
   Label pauseCode = null!;
   Control pauseRoom = null!;
+  Control pauseMain = null!;
+  Control pauseSettings = null!;
   VBoxContainer pauseRows = null!;
   Button resumeButton = null!;
   Button leaveButton = null!;
@@ -60,6 +68,16 @@ public partial class Hud : CanvasLayer
     root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
     AddChild(root);
 
+    AddChild(new ItemIconRenderer());
+
+    hotbar = new Hotbar();
+    hotbar.SetAnchorsPreset(Control.LayoutPreset.CenterBottom);
+    hotbar.GrowHorizontal = Control.GrowDirection.Both;
+    hotbar.GrowVertical = Control.GrowDirection.Begin;
+    hotbar.OffsetBottom = -14f;
+    root.AddChild(hotbar);
+
+    BuildHealthBar();
     BuildToast();
     BuildRoster();
     BuildConnecting();
@@ -82,15 +100,83 @@ public partial class Hud : CanvasLayer
   public void Bind(PlayerController localPlayer)
   {
     player = localPlayer;
-    localPlayer.Interactor.SelectionChanged += OnSelectionChanged;
+    localPlayer.Inventory.Changed += OnInventoryChanged;
+    hotbar.Bind(localPlayer.Inventory);
+    OnInventoryChanged();
   }
 
-  void OnSelectionChanged(byte block)
+  void OnInventoryChanged()
   {
-    BlockLabel.Text = $"[{BlockIds.DisplayName(block)}]  1-{BlockIds.Placeable.Length} / wheel to change";
+    BlockLabel.Text = player!.Inventory.Held?.DisplayName ?? "";
   }
 
   // ------------------------------------------------------------------ building
+
+  /// <summary>Bottom-left health bar: a filled track with the numbers over it, green turning red as it drains.</summary>
+  void BuildHealthBar()
+  {
+    hpFill = new StyleBoxFlat { BgColor = Ui.Good };
+    hpFill.SetCornerRadiusAll(8);
+
+    var track = new StyleBoxFlat { BgColor = new Color(0.05f, 0.06f, 0.09f, 0.8f) };
+    track.SetCornerRadiusAll(8);
+
+    hpBar = new ProgressBar { ShowPercentage = false, MinValue = 0, MaxValue = 100, Value = 100, MouseFilter = Control.MouseFilterEnum.Ignore };
+    hpBar.AddThemeStyleboxOverride("background", track);
+    hpBar.AddThemeStyleboxOverride("fill", hpFill);
+    hpBar.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
+    hpBar.GrowVertical = Control.GrowDirection.Begin;
+    hpBar.OffsetLeft = 16f;
+    hpBar.OffsetBottom = -16f;
+    hpBar.OffsetRight = 16f + 260f;
+    hpBar.OffsetTop = -16f - 28f;
+    root.AddChild(hpBar);
+
+    // The border is its own panel drawn on top of the fill, so the fill never covers it.
+    var frame = new StyleBoxFlat { BgColor = Colors.Transparent, BorderColor = Ui.Border, DrawCenter = false };
+    frame.SetCornerRadiusAll(8);
+    frame.SetBorderWidthAll(3);
+
+    var overlay = new Panel { MouseFilter = Control.MouseFilterEnum.Ignore };
+    overlay.AddThemeStyleboxOverride("panel", frame);
+    overlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+    hpBar.AddChild(overlay);
+
+    hpText = Ui.Label("", null, HorizontalAlignment.Center);
+    hpText.VerticalAlignment = VerticalAlignment.Center;
+    hpText.MouseFilter = Control.MouseFilterEnum.Ignore;
+    hpText.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+    hpBar.AddChild(hpText);
+  }
+
+  /// <summary>Follows the local player's hit points; redraws only when the number changes.</summary>
+  void UpdateHealthBar()
+  {
+    hpBar.Visible = player != null && IsInstanceValid(player);
+
+    if (!hpBar.Visible)
+    {
+      return;
+    }
+
+    var health = player!.Health;
+    var hp = Mathf.CeilToInt(health.Hp);
+    var max = Mathf.CeilToInt(health.MaxHp);
+
+    if (hp == shownHp && max == shownMaxHp)
+    {
+      return;
+    }
+
+    shownHp = hp;
+    shownMaxHp = max;
+    hpBar.MaxValue = max;
+    hpBar.Value = hp;
+    hpText.Text = $"{hp} / {max}";
+
+    var ratio = max > 0 ? hp / (float)max : 0f;
+    hpFill.BgColor = ratio > 0.5f ? Ui.Good : ratio > 0.25f ? Ui.Warn : Ui.Bad;
+  }
 
   void BuildToast()
   {
@@ -152,10 +238,23 @@ public partial class Hud : CanvasLayer
     var card = new PanelContainer { CustomMinimumSize = new Vector2(480f, 0f) };
     center.AddChild(card);
 
-    var column = Ui.Column(12);
-    card.AddChild(column);
+    var shell = Ui.Column(12);
+    card.AddChild(shell);
 
-    column.AddChild(Ui.Label("Paused", Ui.Heading, HorizontalAlignment.Center));
+    shell.AddChild(Ui.Label("Paused", Ui.Heading, HorizontalAlignment.Center));
+
+    var column = Ui.Column(12);
+    pauseMain = column;
+    shell.AddChild(column);
+
+    pauseSettings = Ui.Column(12);
+    pauseSettings.Visible = false;
+    pauseSettings.AddChild(SettingsPanel.Build());
+
+    var settingsBack = Ui.Button("Back", Ui.Primary);
+    settingsBack.Pressed += () => ShowPauseSettings(false);
+    pauseSettings.AddChild(settingsBack);
+    shell.AddChild(pauseSettings);
 
     var room = Ui.Column(6);
     room.AddChild(Ui.Label("Room code", Ui.Subtle, HorizontalAlignment.Center));
@@ -183,11 +282,21 @@ public partial class Hud : CanvasLayer
     resumeButton.Pressed += () => Input.MouseMode = Input.MouseModeEnum.Captured;
     column.AddChild(resumeButton);
 
+    var settingsButton = Ui.Button("Settings");
+    settingsButton.Pressed += () => ShowPauseSettings(true);
+    column.AddChild(settingsButton);
+
     leaveButton = Ui.Button("Quit to menu", Ui.Danger);
     leaveButton.Pressed += LeaveToMenu;
     column.AddChild(leaveButton);
 
     root.AddChild(pause);
+  }
+
+  void ShowPauseSettings(bool show)
+  {
+    pauseMain.Visible = !show;
+    pauseSettings.Visible = show;
   }
 
   Control CenteredCard(out VBoxContainer column, float width)
@@ -237,18 +346,18 @@ public partial class Hud : CanvasLayer
     }
 
     lastRoster = current;
-    FillRows(rosterRows, rosterHp);
-    FillRows(pauseRows, pauseHp);
+    FillRows(rosterRows, rosterRowsByPeer);
+    FillRows(pauseRows, pauseRowsByPeer);
   }
 
-  void FillRows(VBoxContainer rows, Dictionary<int, Label> hpLabels)
+  void FillRows(VBoxContainer rows, Dictionary<int, (Label hp, Label ping)> byPeer)
   {
     foreach (var child in rows.GetChildren())
     {
       child.QueueFree();
     }
 
-    hpLabels.Clear();
+    byPeer.Clear();
 
     var own = Multiplayer.GetUniqueId();
 
@@ -264,9 +373,14 @@ public partial class Hud : CanvasLayer
         row.AddChild(Ui.Label("host", Ui.Subtle));
       }
 
+      var ping = Ui.Label("", Ui.Subtle);
+      ping.CustomMinimumSize = new Vector2(64f, 0f);
+      ping.HorizontalAlignment = HorizontalAlignment.Right;
+      row.AddChild(ping);
+
       var hp = Ui.Label("", Ui.Subtle);
-      hpLabels[peer] = hp;
       row.AddChild(hp);
+      byPeer[peer] = (hp, ping);
       rows.AddChild(row);
     }
   }
@@ -302,6 +416,7 @@ public partial class Hud : CanvasLayer
   public override void _Process(double delta)
   {
     elapsed += delta;
+    UpdateHealthBar();
     textTimer += delta;
 
     if (elapsed >= 1.0)
@@ -322,6 +437,7 @@ public partial class Hud : CanvasLayer
       pauseCode.Text = session.RoomCode ?? "";
       pauseRoom.Visible = session.RoomCode != null;
       leaveButton.Text = session.IsOnline ? "Leave room" : "Quit to menu";
+      ShowPauseSettings(false);
       resumeButton.GrabFocus(); // a controller can press it with A
     }
 
@@ -344,28 +460,53 @@ public partial class Hud : CanvasLayer
     textTimer = 0;
 
     var chunks = Terrain.Instance?.LoadedChunkCount ?? 0;
-    InfoLabel.Text = $"FPS {Engine.GetFramesPerSecond()}   UPS {physicsPerSecond}   chunks {chunks}";
+    InfoLabel.Text = $"FPS {Engine.GetFramesPerSecond()}   UPS {physicsPerSecond}   chunks {chunks}{PingText()}{ModeText()}";
 
-    if (hasPlayer)
-    {
-      HealthLabel.Text = $"HP {Mathf.CeilToInt(player!.Health.Hp)} / {Mathf.CeilToInt(player.Health.MaxHp)}";
-    }
 
     var code = session.RoomCode;
     var idle = session.IsOnline ? "Online" : "Solo";
     RoomLabel.Text = code != null ? $"Room {code}" : idle;
 
-    UpdateHp(rosterHp);
-    UpdateHp(pauseHp);
+    UpdateRows(rosterRowsByPeer);
+    UpdateRows(pauseRowsByPeer);
   }
 
-  void UpdateHp(Dictionary<int, Label> labels)
+  string PingText()
   {
+    if (!session.IsOnline)
+    {
+      return "";
+    }
+
+    var own = Multiplayer.GetUniqueId();
+    var ping = session.PingOf(own);
+
+    return session.IsHost ? "   host" : ping >= 0 ? $"   ping {ping} ms" : "   ping --";
+  }
+
+  string ModeText()
+  {
+    return hasPlayerNoclip() ? "   NOCLIP (F)" : "";
+
+    bool hasPlayerNoclip()
+    {
+      return player != null && IsInstanceValid(player) && player.Noclip;
+    }
+  }
+
+  void UpdateRows(Dictionary<int, (Label hp, Label ping)> rows)
+  {
+    foreach (var (peer, (hp, ping)) in rows)
+    {
+      var ms = session.PingOf(peer);
+      ping.Text = peer == 1 ? "" : ms >= 0 ? $"{ms} ms" : "-- ms";
+    }
+
     foreach (var other in PlayerController.All)
     {
-      if (int.TryParse(other.Name, out var peer) && labels.TryGetValue(peer, out var label))
+      if (int.TryParse(other.Name, out var peer) && rows.TryGetValue(peer, out var labels))
       {
-        label.Text = other.Health.IsDead ? "down" : $"HP {Mathf.CeilToInt(other.Health.Hp)}";
+        labels.hp.Text = other.Health.IsDead ? "down" : $"HP {Mathf.CeilToInt(other.Health.Hp)}";
       }
     }
   }

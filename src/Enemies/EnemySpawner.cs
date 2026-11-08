@@ -1,4 +1,5 @@
 using System;
+using Curitibia.Core;
 using Curitibia.World;
 using Godot;
 
@@ -22,7 +23,7 @@ public partial class EnemySpawner : MultiplayerSpawner
     SpawnFunction = Callable.From<Variant, Node>(Build);
   }
 
-  /// <summary>Host only: a ring of enemies on the terrain surface around a world column.</summary>
+  /// <summary>Host only: a ring of enemies on the terrain surface around a voxel column.</summary>
   public void SpawnAround(int centerX, int centerZ)
   {
     var terrain = Terrain.Instance;
@@ -35,15 +36,15 @@ public partial class EnemySpawner : MultiplayerSpawner
     for (int i = 0; i < Count; i++)
     {
       var angle = i * Mathf.Tau / Math.Max(1, Count) + 0.6f;
-      var radius = 14 + i * 3;
+      var radius = 28 + i * 6; // voxels
       var wx = centerX + (int)(Mathf.Cos(angle) * radius);
       var wz = centerZ + (int)(Mathf.Sin(angle) * radius);
-      var y = terrain.SurfaceHeightAt(wx, wz) + 1.5f;
+      var y = terrain.SurfaceHeightAt(wx, wz) + 1f;
 
       Spawn(new Godot.Collections.Dictionary
       {
         ["id"] = nextId++,
-        ["pos"] = new Vector3(wx + 0.5f, y, wz + 0.5f),
+        ["pos"] = new Vector3(VoxelMath.VoxelCenter(wx), y, VoxelMath.VoxelCenter(wz)),
       });
     }
   }

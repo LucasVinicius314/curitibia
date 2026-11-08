@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Curitibia.Combat;
 using Curitibia.Core;
+using Curitibia.Items;
 using Curitibia.World;
 using Godot;
 
@@ -19,6 +20,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
   [Export] public Camera3D Camera { get; set; } = null!;
   [Export] public PlayerVisual Visual { get; set; } = null!;
   [Export] public BlockInteractor Interactor { get; set; } = null!;
+  [Export] public Inventory Inventory { get; set; } = null!;
   [Export] public Health Health { get; set; } = null!;
   [Export] public MultiplayerSynchronizer HealthSync { get; set; } = null!;
 
@@ -28,17 +30,27 @@ public partial class PlayerController : CharacterBody3D, IDamageable
   [Export] public float SyncPitch { get; set; }
   [Export] public Vector3 SyncVelocity { get; set; }
   [Export] public bool SyncGrounded { get; set; }
+  [Export] public int SyncHeldItem { get; set; }
 
   /// <summary>Every player in the scene (kept by enter/exit, so enemies never scan the tree).</summary>
   public static readonly List<PlayerController> All = new();
 
   public Team Team => Team.Players;
 
+  /// <summary>NetId of the item in hand: read from the inventory on the owner, from the replicated value elsewhere.</summary>
+  public int HeldItemId => IsLocal ? Inventory.HeldId : SyncHeldItem;
+
   /// <summary>Where this player looks from.</summary>
   public Vector3 EyePosition => CameraPivot.GlobalPosition;
 
   /// <summary>True on the peer that controls this player (always true offline).</summary>
   public bool IsLocal => IsMultiplayerAuthority();
+
+  /// <summary>Third-person camera on (local player only).</summary>
+  public bool ThirdPerson { get; private set; }
+
+  /// <summary>Noclip flight for testing (local player only): no collision, no gravity.</summary>
+  public bool Noclip { get; private set; }
 
   /// <summary>World-space box of the body, used to keep block placement out of the player.</summary>
   public Aabb BodyBounds => new(GlobalPosition + new Vector3(-0.4f, 0f, -0.4f), new Vector3(0.8f, 1.8f, 0.8f));
@@ -53,6 +65,9 @@ public partial class PlayerController : CharacterBody3D, IDamageable
   // Last two tick positions, so the camera glides between ticks at any frame rate (see TickSmoother).
   TickSmoother smoother;
 
+  readonly bool showSelf = DevArgs.Has("show-self");
+  uint walkMask;
+  float cameraDistance;
   float gravity;
   float pitch;
   float jumpBuffer;
@@ -79,6 +94,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
   {
     gravity = (float)ProjectSettings.GetSetting("physics/3d/default_gravity", 9.8);
     cameraBaseY = CameraPivot.Position.Y;
+    walkMask = CollisionMask;
 
     // A spawned player arrives with the position the host chose in SyncPosition; a hand-placed one reports its own.
     if (SyncPosition != Vector3.Zero)
@@ -104,7 +120,12 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       Camera.Fov = GameSettings.FieldOfView;
       GameSettings.Changed += OnSettingsChanged;
       Input.MouseMode = Input.MouseModeEnum.Captured;
-      Visual.Visible = DevArgs.Has("show-self"); // first person: do not draw our own body around the camera
+      ThirdPerson = DevArgs.Has("third-person");
+
+      if (DevArgs.Has("noclip"))
+      {
+        SetNoclip(true);
+      }
     }
     else
     {
@@ -116,6 +137,43 @@ public partial class PlayerController : CharacterBody3D, IDamageable
   void OnSettingsChanged()
   {
     Camera.Fov = GameSettings.FieldOfView;
+  }
+
+  void SetNoclip(bool on)
+  {
+    Noclip = on;
+    CollisionMask = on ? 0u : walkMask;
+    Velocity = Vector3.Zero;
+    horizontal = Vector3.Zero;
+
+    if (on)
+    {
+      return;
+    }
+
+    // Coming back from inside the terrain: climb out so the body does not start embedded in a block.
+    var terrain = Terrain.Instance;
+
+    if (terrain == null)
+    {
+      return;
+    }
+
+    for (int i = 0; i < VoxelMath.ChunkHeight; i++)
+    {
+      var p = GlobalPosition;
+      var vx = VoxelMath.WorldToVoxel(p.X);
+      var vz = VoxelMath.WorldToVoxel(p.Z);
+
+      if (!terrain.IsSolid(vx, VoxelMath.WorldToVoxel(p.Y + 0.1f), vz) && !terrain.IsSolid(vx, VoxelMath.WorldToVoxel(p.Y + 1.6f), vz))
+      {
+        break;
+      }
+
+      GlobalPosition = p + Vector3.Up * VoxelMath.BlockSize;
+    }
+
+    smoother.Reset(GlobalPosition);
   }
 
   public override void _ExitTree()
@@ -150,10 +208,19 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       return;
     }
 
+    if (@event.IsActionPressed(Actions.ToggleView))
+    {
+      ThirdPerson = !ThirdPerson;
+    }
+    else if (@event.IsActionPressed(Actions.ToggleFly))
+    {
+      SetNoclip(!Noclip);
+    }
+
     if (@event is InputEventMouseMotion motion)
     {
       // Mouse deltas are already per-frame distances: no delta-time scaling (that would make it frame-rate dependent).
-      Look(-motion.Relative.X * Tuning.MouseSensitivity, -motion.Relative.Y * Tuning.MouseSensitivity);
+      Look(-motion.Relative.X * Tuning.MouseSensitivity * GameSettings.MouseSensitivity, -motion.Relative.Y * Tuning.MouseSensitivity * GameSettings.MouseSensitivity);
     }
   }
 
@@ -177,13 +244,17 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       {
         // Squared response: small deflections turn slowly (fine aim), full deflection turns at StickSensitivity.
         var curved = stick * stick.Length();
-        Look(-curved.X * Tuning.StickSensitivity * dt, -curved.Y * Tuning.StickSensitivity * dt);
+        var stickSpeed = Tuning.StickSensitivity * GameSettings.MouseSensitivity;
+        Look(-curved.X * stickSpeed * dt, -curved.Y * stickSpeed * dt);
       }
 
       // Ease the camera back down after a step-up so climbing a block is not a pop.
       stepCameraOffset = Mathf.Lerp(stepCameraOffset, 0f, 1f - Mathf.Exp(-14f * dt));
       var glide = GlobalTransform.Basis.Inverse() * (smoother.Blend(GlobalPosition) - GlobalPosition);
       CameraPivot.Position = new Vector3(0f, cameraBaseY + stepCameraOffset, 0f) + glide;
+
+      Visual.ShadowOnly = !ThirdPerson && !showSelf; // first person: the body casts its shadow but is not drawn
+      UpdateCameraDistance(dt);
 
       Visual.Animate(dt, Velocity, IsOnFloor(), pitch);
       return;
@@ -203,6 +274,37 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     Visual.Animate(dt, SyncVelocity, SyncGrounded, pitch);
   }
 
+  /// <summary>
+  /// Third person: the camera sits behind the eye, pulled in when the terrain would be between the two (a voxel walk, no
+  /// physics query, so nothing is allocated per frame).
+  /// </summary>
+  void UpdateCameraDistance(float dt)
+  {
+    var wanted = ThirdPerson ? Tuning.ThirdPersonDistance : 0f;
+    var terrain = Terrain.Instance;
+
+    if (wanted > 0f && terrain != null)
+    {
+      var origin = CameraPivot.GlobalPosition;
+      var back = CameraPivot.GlobalTransform.Basis.Z;
+
+      for (float t = 0.25f; t <= wanted; t += 0.1f)
+      {
+        var p = origin + back * t;
+
+        if (terrain.IsSolid(VoxelMath.WorldToVoxel(p.X), VoxelMath.WorldToVoxel(p.Y), VoxelMath.WorldToVoxel(p.Z)))
+        {
+          wanted = Math.Max(0.2f, t - 0.3f);
+          break;
+        }
+      }
+    }
+
+    // Snap in when something is in the way, ease back out.
+    cameraDistance = wanted < cameraDistance ? wanted : Mathf.Lerp(cameraDistance, wanted, 1f - Mathf.Exp(-10f * dt));
+    Camera.Position = new Vector3(0f, 0f, cameraDistance);
+  }
+
   public override void _PhysicsProcess(double delta)
   {
     var dt = (float)delta;
@@ -218,6 +320,21 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       return;
     }
 
+    var alive = !Health.IsDead;
+    var active = alive && Input.MouseMode == Input.MouseModeEnum.Captured;
+
+    var move = active
+      ? Input.GetVector(Actions.MoveLeft, Actions.MoveRight, Actions.MoveForward, Actions.MoveBack)
+      : Vector2.Zero;
+
+    var sprinting = active && move != Vector2.Zero && Input.IsActionPressed(Actions.Sprint);
+
+    if (Noclip)
+    {
+      Fly(dt, move, active, sprinting);
+      return;
+    }
+
     if (GlobalPosition.Y < Tuning.KillHeight)
     {
       Respawn();
@@ -227,11 +344,6 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     var velocity = Velocity;
 
     // Horizontal: smooth toward the wish direction, independent of frame rate.
-    var alive = !Health.IsDead;
-
-    var move = alive && Input.MouseMode == Input.MouseModeEnum.Captured
-      ? Input.GetVector(Actions.MoveLeft, Actions.MoveRight, Actions.MoveForward, Actions.MoveBack)
-      : Vector2.Zero;
 
     var wish = GlobalTransform.Basis * new Vector3(move.X, 0f, move.Y);
     wish.Y = 0f;
@@ -242,11 +354,12 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     }
 
     var rate = onFloor ? Tuning.Responsiveness : Tuning.AirResponsiveness;
-    horizontal = horizontal.Lerp(wish * Tuning.Speed, 1f - Mathf.Exp(-rate * dt));
+    horizontal = horizontal.Lerp(wish * Tuning.Speed * (sprinting ? Tuning.SprintMultiplier : 1f), 1f - Mathf.Exp(-rate * dt));
 
     // Vertical: gravity, jump buffer and a little coyote time.
     coyote = onFloor ? CoyoteSeconds : coyote - dt;
-    jumpBuffer = alive && Input.IsActionJustPressed(Actions.Jump) ? JumpBufferSeconds : jumpBuffer - dt;
+    // Held, not just pressed: keep hopping for as long as the key is down.
+    jumpBuffer = active && Input.IsActionPressed(Actions.Jump) ? JumpBufferSeconds : jumpBuffer - dt;
 
     if (onFloor)
     {
@@ -278,6 +391,29 @@ public partial class PlayerController : CharacterBody3D, IDamageable
 
     // If we ran into something, do not keep pushing into it with stored speed.
     horizontal = new Vector3(Velocity.X, 0f, Velocity.Z);
+
+    Publish();
+    smoother.Record(GlobalPosition);
+  }
+
+  /// <summary>Noclip: fly along the view direction, Jump rises and FlyDown sinks; no gravity, no collision.</summary>
+  void Fly(float dt, Vector2 move, bool active, bool sprinting)
+  {
+    var wish = CameraPivot.GlobalTransform.Basis * new Vector3(move.X, 0f, move.Y);
+
+    if (active)
+    {
+      wish.Y += (Input.IsActionPressed(Actions.Jump) ? 1f : 0f) - (Input.IsActionPressed(Actions.FlyDown) ? 1f : 0f);
+    }
+
+    if (wish.LengthSquared() > 1f)
+    {
+      wish = wish.Normalized();
+    }
+
+    var target = wish * Tuning.FlySpeed * (sprinting ? 3f : 1f);
+    Velocity = Velocity.Lerp(target, 1f - Mathf.Exp(-10f * dt));
+    MoveAndSlide(); // the collision mask is empty, so this just moves
 
     Publish();
     smoother.Record(GlobalPosition);
@@ -345,11 +481,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
 
   void Respawn()
   {
-    var x = VoxelMath.FloorToInt(GlobalPosition.X);
-    var z = VoxelMath.FloorToInt(GlobalPosition.Z);
-    var height = Terrain.Instance?.SurfaceHeightAt(x, z) ?? 20f;
-
-    GlobalPosition = new Vector3(x + 0.5f, height + 2f, z + 0.5f);
+    GlobalPosition = SpawnPoint(VoxelMath.WorldToVoxel(GlobalPosition.X), VoxelMath.WorldToVoxel(GlobalPosition.Z)) + Vector3.Up * 0.5f;
     smoother.Reset(GlobalPosition);
     Velocity = Vector3.Zero;
     horizontal = Vector3.Zero;
@@ -362,6 +494,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     SyncPitch = pitch;
     SyncVelocity = Velocity;
     SyncGrounded = IsOnFloor();
+    SyncHeldItem = Inventory.HeldId;
   }
 
   /// <summary>
@@ -428,7 +561,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       }
 
       Health.Reset();
-      var spawn = SpawnPoint(VoxelMath.FloorToInt(GlobalPosition.X), VoxelMath.FloorToInt(GlobalPosition.Z));
+      var spawn = SpawnPoint(VoxelMath.WorldToVoxel(GlobalPosition.X), VoxelMath.WorldToVoxel(GlobalPosition.Z));
       var owner = GetMultiplayerAuthority();
 
       if (owner == Multiplayer.GetUniqueId())
@@ -481,11 +614,11 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     horizontal = Vector3.Zero;
   }
 
-  /// <summary>A spot just above the terrain surface at a world column, for spawning (set before adding to the tree).</summary>
+  /// <summary>A spot just above the terrain surface at a voxel column, for spawning (set before adding to the tree).</summary>
   public static Vector3 SpawnPoint(int wx, int wz)
   {
-    var height = Terrain.Instance?.SurfaceHeightAt(wx, wz) ?? 20f;
+    var height = Terrain.Instance?.SurfaceHeightAt(wx, wz) ?? 25f;
 
-    return new Vector3(wx + 0.5f, height + 1.5f, wz + 0.5f);
+    return new Vector3(VoxelMath.VoxelCenter(wx), height + 1f, VoxelMath.VoxelCenter(wz));
   }
 }

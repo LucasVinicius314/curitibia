@@ -12,7 +12,8 @@ public partial class EnemyTuning : Resource
   /// <summary>Wander speed as a fraction of Speed.</summary>
   [Export] public float WanderSpeedFactor { get; set; } = 0.45f;
 
-  [Export] public float JumpVelocity { get; set; } = 5.5f;
+  /// <summary>Enough to hop one half-metre block (apex about 0.66 m).</summary>
+  [Export] public float JumpVelocity { get; set; } = 3.6f;
 
   /// <summary>Longest distance at which a player can be seen (Unity: 13).</summary>
   [Export] public float VisionRange { get; set; } = 13f;
@@ -29,18 +30,24 @@ public partial class EnemyTuning : Resource
   /// <summary>Seconds between decisions (Unity: 0.2).</summary>
   [Export] public float ThinkInterval { get; set; } = 0.2f;
 
-  /// <summary>Stops approaching and just shoots inside this distance.</summary>
-  [Export] public float HoldDistance { get; set; } = 6f;
+  /// <summary>Stops walking toward the target inside this distance (metres, between body centres) and just fights.</summary>
+  [Export] public float HoldDistance { get; set; } = 1.1f;
 
-  [Export] public float ShootRange { get; set; } = 12f;
-  [Export] public float ShootCooldown { get; set; } = 1.6f;
+  /// <summary>Reach of the melee swing, metres between body centres.</summary>
+  [Export] public float MeleeRange { get; set; } = 1.7f;
 
-  /// <summary>Random aim error in degrees.</summary>
-  [Export] public float AimError { get; set; } = 3f;
+  [Export] public float MeleeDamage { get; set; } = 12f;
+  [Export] public float MeleeKnockback { get; set; } = 6f;
+
+  /// <summary>Seconds between swings.</summary>
+  [Export] public float MeleeCooldown { get; set; } = 1.1f;
+
+  /// <summary>Hit points (the player's sword does 25 per hit).</summary>
+  [Export] public float MaxHp { get; set; } = 60f;
 
   /// <summary>Turn rate (Unity slerped at 6 per second).</summary>
   [Export] public float TurnSpeed { get; set; } = 6f;
 
-  /// <summary>Wander picks a spot within this many blocks.</summary>
-  [Export] public int WanderRadius { get; set; } = 8;
+  /// <summary>Wander picks a spot within this many voxels (half-metre blocks).</summary>
+  [Export] public int WanderRadius { get; set; } = 16;
 }

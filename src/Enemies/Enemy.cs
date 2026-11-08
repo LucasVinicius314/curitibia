@@ -16,21 +16,28 @@ public enum EnemyState
 }
 
 /// <summary>
-/// A shooter that hunts players. The host runs all of the thinking (vision, memory, pathing, shooting); every other peer
+/// A melee fighter that hunts players. The host runs all of the thinking (vision, memory, pathing, attacking); every other peer
 /// only shows the replicated state, interpolated. Behaviour from the Unity enemy: closest visible player inside a 140
 /// degree cone and 13 m (line of sight must reach it), noticed anyway within 3 m, kept as a target for 3 s after it is lost
 /// and then searched for at its last known position.
 /// </summary>
-public partial class Enemy : CharacterBody3D
+public partial class Enemy : CharacterBody3D, IDamageable
 {
   [Export] public EnemyTuning Tuning { get; set; } = null!;
   [Export] public EnemyVisual Visual { get; set; } = null!;
+  [Export] public Health Health { get; set; } = null!;
 
   // Replicated state (host writes, others read).
   [Export] public Vector3 SyncPosition { get; set; }
   [Export] public float SyncYaw { get; set; }
   [Export] public Vector3 SyncVelocity { get; set; }
   [Export] public bool SyncGrounded { get; set; }
+
+  /// <summary>Voxels the body occupies standing up (1.8 m of half-metre blocks), for the pathfinder.</summary>
+  const int BodyCells = 4;
+
+  /// <summary>Every enemy in the scene (kept by enter/exit so weapons never scan the tree).</summary>
+  public static readonly List<Enemy> All = new();
 
   public Team Team => Team.Enemies;
   public EnemyState State { get; private set; } = EnemyState.Idle;
@@ -43,7 +50,7 @@ public partial class Enemy : CharacterBody3D
   double clock;
   float thinkTimer;
   float wanderTimer;
-  float shootTimer;
+  float attackTimer;
   double lastSeen = double.NegativeInfinity;
   Vector3 lastKnown;
   PlayerController? target;
@@ -64,6 +71,16 @@ public partial class Enemy : CharacterBody3D
     isSolid = (x, y, z) => Terrain.Instance?.IsSolid(x, y, z) ?? true;
   }
 
+  public override void _EnterTree()
+  {
+    All.Add(this);
+  }
+
+  public override void _ExitTree()
+  {
+    All.Remove(this);
+  }
+
   public override void _Ready()
   {
     gravity = (float)ProjectSettings.GetSetting("physics/3d/default_gravity", 9.8);
@@ -81,6 +98,38 @@ public partial class Enemy : CharacterBody3D
 
     smoother.Reset(GlobalPosition);
     SetPhysicsProcess(Multiplayer.IsServer());
+
+    Health.MaxHp = Tuning.MaxHp;
+    Health.Hp = Tuning.MaxHp;
+
+    if (Multiplayer.IsServer())
+    {
+      Health.Died += OnDied;
+    }
+  }
+
+  // ------------------------------------------------------------------ damage (host only)
+
+  public void TakeDamage(DamageInfo info)
+  {
+    if (!Multiplayer.IsServer() || Health.IsDead)
+    {
+      return;
+    }
+
+    Health.Damage(info.Amount);
+
+    var flat = new Vector3(info.Direction.X, 0f, info.Direction.Z).Normalized();
+    horizontal += flat * info.Knockback;
+    Velocity = new Vector3(Velocity.X, Math.Max(Velocity.Y, 2.5f), Velocity.Z);
+
+    // Being hit makes it notice the attacker even if it was looking elsewhere.
+    lastSeen = clock;
+  }
+
+  void OnDied()
+  {
+    QueueFree(); // the spawner removes it on every peer
   }
 
   // ------------------------------------------------------------------ clients
@@ -126,7 +175,7 @@ public partial class Enemy : CharacterBody3D
     }
 
     thinkTimer -= dt;
-    shootTimer -= dt;
+    attackTimer -= dt;
     repathTimer -= dt;
 
     if (thinkTimer <= 0f)
@@ -180,7 +229,7 @@ public partial class Enemy : CharacterBody3D
       RepathTo(lastKnown);
     }
 
-    TryShoot();
+    TryAttack();
   }
 
   void PickTarget()
@@ -245,29 +294,23 @@ public partial class Enemy : CharacterBody3D
     return hit.Count > 0 && hit["collider"].AsGodotObject() == player;
   }
 
-  void TryShoot()
+  void TryAttack()
   {
-    if (target == null || !targetVisible || shootTimer > 0f || target.Health.IsDead)
+    if (target == null || !targetVisible || attackTimer > 0f || target.Health.IsDead)
     {
       return;
     }
 
-    var spawner = ProjectileSpawner.Instance;
-    var origin = GlobalPosition + Vector3.Up * 1.3f;
-    var aim = target.GlobalPosition + Vector3.Up * 1.1f - origin;
+    var toTarget = target.GlobalPosition - GlobalPosition;
+    toTarget.Y = 0f;
 
-    if (spawner == null || aim.Length() > Tuning.ShootRange)
+    if (toTarget.Length() > Tuning.MeleeRange || Math.Abs(target.GlobalPosition.Y - GlobalPosition.Y) > 1.4f)
     {
       return;
     }
 
-    var error = Mathf.DegToRad(Tuning.AimError);
-    var direction = aim.Normalized()
-      .Rotated(Vector3.Up, rng.RandfRange(-error, error))
-      .Rotated(Vector3.Right, rng.RandfRange(-error, error));
-
-    shootTimer = Tuning.ShootCooldown;
-    spawner.Fire(origin + direction * 0.6f, direction, Team);
+    attackTimer = Tuning.MeleeCooldown;
+    target.TakeDamage(new DamageInfo(Tuning.MeleeDamage, Team, toTarget.Normalized(), Tuning.MeleeKnockback));
   }
 
   // ------------------------------------------------------------------ pathing
@@ -298,7 +341,7 @@ public partial class Enemy : CharacterBody3D
 
     repathTimer = 1.0f;
     pathGoal = goal.Value;
-    path = VoxelPathfinder.FindPath(isSolid, start.Value, goal.Value);
+    path = VoxelPathfinder.FindPath(isSolid, start.Value, goal.Value, body: BodyCells);
     pathIndex = 0;
   }
 
@@ -306,9 +349,10 @@ public partial class Enemy : CharacterBody3D
   {
     return VoxelPathfinder.SnapToStandable(
       isSolid,
-      VoxelMath.FloorToInt(position.X),
-      VoxelMath.FloorToInt(position.Y + 0.05f),
-      VoxelMath.FloorToInt(position.Z));
+      VoxelMath.WorldToVoxel(position.X),
+      VoxelMath.WorldToVoxel(position.Y + 0.05f),
+      VoxelMath.WorldToVoxel(position.Z),
+      body: BodyCells);
   }
 
   void Wander()
@@ -323,7 +367,7 @@ public partial class Enemy : CharacterBody3D
     var r = Tuning.WanderRadius;
     var gx = start.Value.x + rng.RandiRange(-r, r);
     var gz = start.Value.z + rng.RandiRange(-r, r);
-    var goal = VoxelPathfinder.SnapToStandable(isSolid, gx, start.Value.y, gz);
+    var goal = VoxelPathfinder.SnapToStandable(isSolid, gx, start.Value.y, gz, body: BodyCells);
 
     if (goal == null)
     {
@@ -331,7 +375,7 @@ public partial class Enemy : CharacterBody3D
     }
 
     pathGoal = goal.Value;
-    path = VoxelPathfinder.FindPath(isSolid, start.Value, goal.Value, 800);
+    path = VoxelPathfinder.FindPath(isSolid, start.Value, goal.Value, 800, BodyCells);
     pathIndex = 0;
   }
 
@@ -342,26 +386,26 @@ public partial class Enemy : CharacterBody3D
     var desired = Vector3.Zero;
     var wantJump = false;
 
-    // Hold position and just shoot once close enough with a clear view.
+    // Stop walking once next to the target and just fight.
     var holding = State == EnemyState.Chase && targetVisible && target != null
       && GlobalPosition.DistanceTo(target.GlobalPosition) < Tuning.HoldDistance;
 
     if (!holding && path != null && pathIndex < path.Count)
     {
       var cell = path[pathIndex];
-      var waypoint = new Vector3(cell.x + 0.5f, cell.y, cell.z + 0.5f);
+      var waypoint = new Vector3(VoxelMath.VoxelCenter(cell.x), VoxelMath.VoxelToWorld(cell.y), VoxelMath.VoxelCenter(cell.z));
       var flat = waypoint - GlobalPosition;
       flat.Y = 0f;
 
-      if (flat.Length() < 0.3f)
+      if (flat.Length() < 0.2f)
       {
         pathIndex++;
       }
       else
       {
         desired = flat.Normalized();
-        var feetCell = VoxelMath.FloorToInt(GlobalPosition.Y + 0.05f);
-        wantJump = cell.y > feetCell && IsOnFloor() && flat.Length() < 1.2f;
+        var feetCell = VoxelMath.WorldToVoxel(GlobalPosition.Y + 0.05f);
+        wantJump = cell.y > feetCell && IsOnFloor() && (flat.Length() < 0.9f || IsOnWall());
       }
     }
 

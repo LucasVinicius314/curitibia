@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://src/Items/ItemDef.cs" id="1"]
+[ext_resource type="Script" path="res://src/Items/SwordBehavior.cs" id="2"]
+[ext_resource type="Script" path="res://src/Items/SwordItemModel.cs" id="3"]
+
+[sub_resource type="Resource" id="Resource_behavior"]
+script = ExtResource("2")
+Damage = 25.0
+Knockback = 7.0
+Reach = 2.8
+MinAlignment = 0.45
+Cooldown = 0.5
+
+[sub_resource type="Resource" id="Resource_model"]
+script = ExtResource("3")
+RestPitchDegrees = 85.0
+RestRollDegrees = -90.0
+SwingAmount = 1.0
+IconRotationDegrees = Vector3(45, -90, 0)
+
+[resource]
+script = ExtResource("1")
+NetId = 1
+DisplayName = "Sword"
+MaxStack = 1
+Infinite = true
+Behavior = SubResource("Resource_behavior")
+Model = SubResource("Resource_model")

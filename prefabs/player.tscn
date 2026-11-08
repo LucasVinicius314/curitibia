@@ -1,10 +1,13 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://src/Player/PlayerController.cs" id="1"]
 [ext_resource type="Resource" path="res://data/player_tuning.tres" id="2"]
 [ext_resource type="Script" path="res://src/Player/PlayerVisual.cs" id="3"]
 [ext_resource type="Script" path="res://src/Player/BlockInteractor.cs" id="4"]
 [ext_resource type="Script" path="res://src/Combat/Health.cs" id="5"]
+[ext_resource type="Script" path="res://src/Items/Inventory.cs" id="6"]
+[ext_resource type="Script" path="res://src/Items/ItemUser.cs" id="7"]
+[ext_resource type="Script" path="res://src/Items/HeldItemDisplay.cs" id="8"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
 radius = 0.4
@@ -26,13 +29,16 @@ properties/3/replication_mode = 1
 properties/4/path = NodePath(".:SyncGrounded")
 properties/4/spawn = true
 properties/4/replication_mode = 1
+properties/5/path = NodePath(".:SyncHeldItem")
+properties/5/spawn = true
+properties/5/replication_mode = 1
 
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_2"]
 properties/0/path = NodePath("Health:Hp")
 properties/0/spawn = true
 properties/0/replication_mode = 2
 
-[node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("CameraPivot", "Camera", "Visual", "Interactor", "Health", "HealthSync")]
+[node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("CameraPivot", "Camera", "Visual", "Interactor", "Inventory", "Health", "HealthSync")]
 collision_layer = 2
 collision_mask = 5
 floor_snap_length = 0.35
@@ -42,6 +48,7 @@ CameraPivot = NodePath("CameraPivot")
 Camera = NodePath("CameraPivot/Camera3D")
 Visual = NodePath("Visual")
 Interactor = NodePath("BlockInteractor")
+Inventory = NodePath("Inventory")
 Health = NodePath("Health")
 HealthSync = NodePath("HealthSync")
 
@@ -63,6 +70,20 @@ script = ExtResource("3")
 [node name="BlockInteractor" type="Node" parent="." node_paths=PackedStringArray("Player", "Camera")]
 script = ExtResource("4")
 Player = NodePath("..")
+Camera = NodePath("../CameraPivot/Camera3D")
+
+[node name="Inventory" type="Node" parent="." node_paths=PackedStringArray("Player")]
+script = ExtResource("6")
+Player = NodePath("..")
+
+[node name="ItemUser" type="Node" parent="." node_paths=PackedStringArray("Player")]
+script = ExtResource("7")
+Player = NodePath("..")
+
+[node name="HeldItemDisplay" type="Node" parent="." node_paths=PackedStringArray("Player", "User", "Camera")]
+script = ExtResource("8")
+Player = NodePath("..")
+User = NodePath("../ItemUser")
 Camera = NodePath("../CameraPivot/Camera3D")
 
 [node name="Synchronizer" type="MultiplayerSynchronizer" parent="."]

@@ -14,6 +14,8 @@ public static class TextureAtlas
   {
     "res://assets/textures/grass.png", // tile 0 (BlockIds.Grass)
     "res://assets/textures/stone.png", // tile 1 (BlockIds.Stone)
+    "res://assets/textures/wood.png",   // tile 2 (BlockIds.Wood)
+    "res://assets/textures/leaves.png", // tile 3 (BlockIds.Leaves)
   };
 
   static StandardMaterial3D? material;
