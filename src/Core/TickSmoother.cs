@@ -6,7 +6,7 @@ namespace Curitibia.Core;
 /// Bodies only move on physics ticks, which do not line up with rendered frames: at 160 fps on 60 Hz physics most frames
 /// show no motion and a few show a jump. This keeps the last two tick positions so presentation (the camera, a visual) can
 /// sit between them using Engine.GetPhysicsInterpolationFraction(). Engine physics interpolation stays off (it lags and
-/// ghosts a first-person camera); this is the manual version, as in fracture-protocol.
+/// ghosts a first-person camera); this is the manual version.
 /// </summary>
 public struct TickSmoother
 {

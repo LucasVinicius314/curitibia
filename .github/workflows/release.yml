@@ -1,0 +1,109 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds Curitibia for Windows and Linux and publishes a GitHub release with
+# Curitibia-windows.zip and Curitibia-linux.tar.gz (the names the README's download commands expect).
+# The tagged commit must be on main. Every tag is published as a full release (never a pre-release), so `releases/latest` works.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # to create the release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Keep in step with the Godot you develop with (BUILDING.md, project.godot). Bumping it refreshes the cache below.
+  GODOT_VERSION: '4.7.2'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true   # libs/p2p-signaling-server, the multiplayer client library (a public repository)
+
+      - name: Only release commits that are on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on main; not releasing."
+            exit 1
+          fi
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Unit tests
+        run: dotnet test tests/Curitibia.Tests --nologo
+
+      # The Godot editor and the two export templates we need (about 300 MB) are cached between runs, so the
+      # 1.2 GB official templates download below only happens the first time or when GODOT_VERSION changes.
+      - name: Cache Godot and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-mono-linux-v1
+
+      - name: Download Godot and the export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          editor="Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+          templates="Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz"
+          work="$(mktemp -d)"
+
+          curl -fL --retry 3 -o "$work/SHA512-SUMS.txt" "$base/SHA512-SUMS.txt"
+          for file in "$editor" "$templates"; do
+            curl -fL --retry 3 -o "$work/$file" "$base/$file"
+            (cd "$work" && grep -F "  $file" SHA512-SUMS.txt | sha512sum -c -)
+          done
+
+          mkdir -p "$HOME/godot"
+          unzip -q "$work/$editor" -d "$HOME/godot"
+
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono"
+          mkdir -p "$dest"
+          unzip -q -j "$work/$templates" \
+            templates/version.txt \
+            templates/windows_release_x86_64.exe \
+            templates/windows_release_x86_64_console.exe \
+            templates/linux_release.x86_64 \
+            -d "$dest"
+
+      - name: Fetch the WebRTC native extension (multiplayer)
+        run: bash scripts/fetch-webrtc.sh
+
+      - name: Build Windows and Linux
+        run: |
+          set -euo pipefail
+          godot="$(find "$HOME/godot" -type f -name 'Godot_v*_mono_linux.x86_64' | head -n1)"
+          chmod +x "$godot"
+          GODOT="$godot" bash build.sh --package
+          ls -l build
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=(--title "Curitibia ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag)
+          gh release create "$GITHUB_REF_NAME" \
+            build/Curitibia-windows.zip \
+            build/Curitibia-linux.tar.gz \
+            "${flags[@]}"

@@ -117,6 +117,35 @@ public partial class NetSession : Node
     }
   }
 
+  /// <summary>
+  /// The version reported to the signaling server (informational; the server never rejects a version): the release tag without
+  /// its leading v, read from the version.txt that release builds carry next to the executable; "dev" when run from source.
+  /// Override with `-- --net-version=...`.
+  /// </summary>
+  public static string GameVersion()
+  {
+    if (DevArgs.Get("net-version") is { } forced)
+    {
+      return forced;
+    }
+
+    try
+    {
+      var path = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(OS.GetExecutablePath()) ?? "", "version.txt");
+
+      if (System.IO.File.Exists(path))
+      {
+        return System.IO.File.ReadAllText(path).Trim().TrimStart('v');
+      }
+    }
+    catch (System.IO.IOException)
+    {
+      // unreadable: fall through
+    }
+
+    return "dev";
+  }
+
   // ------------------------------------------------------------------ lobby
 
   P2PLobby EnsureLobby()
@@ -127,7 +156,7 @@ public partial class NetSession : Node
     }
 
     // Url stays empty on purpose: the library then uses the machine's configured server and never saves one of ours.
-    lobby = new P2PLobby("", Bucket, ProjectSettings.GetSetting("application/config/version", "dev").AsString())
+    lobby = new P2PLobby("", Bucket, GameVersion())
     {
       PlayerName = PlayerName,
     };

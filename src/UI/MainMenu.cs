@@ -136,6 +136,26 @@ public partial class MainMenu : Control
     }
 
     screenshotPath = DevArgs.Get("screenshot");
+
+    // Scripted runs of an exported build cannot pass a scene path (release templates forbid it), so the menu itself starts
+    // the world when asked: --solo, or the --net-host / --net-join=CODE flags (NetSession turns those into a pending request).
+    if (session.Pending != null || DevArgs.Has("solo"))
+    {
+      var request = session.Pending ?? new StartRequest(SessionKind.Solo);
+      CallDeferred(MethodName.AutoStart, Variant.From(request.Kind == SessionKind.Solo));
+    }
+  }
+
+  void AutoStart(bool solo)
+  {
+    if (solo && session.Pending == null)
+    {
+      Start(new StartRequest(SessionKind.Solo));
+    }
+    else
+    {
+      GetTree().ChangeSceneToFile(WorldScene); // Pending is already set
+    }
   }
 
   public override void _ExitTree()

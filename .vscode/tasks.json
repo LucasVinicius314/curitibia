@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build: Windows + Linux",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Target all",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Windows",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Target windows",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Linux",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Target linux",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Windows + Linux, packaged",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Target all -Package",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: install export templates",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -InstallTemplates",
+      "problemMatcher": []
+    }
+  ]
+}
