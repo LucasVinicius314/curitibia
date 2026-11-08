@@ -15,7 +15,7 @@ public enum SessionKind
 }
 
 /// <summary>What the menu (or a dev flag) asked for; the world scene reads it when it loads.</summary>
-public sealed record StartRequest(SessionKind Kind, string? Code = null, bool ListForFriends = true);
+public sealed record StartRequest(SessionKind Kind, string? Code = null, bool ListForFriends = true, int MaxPlayers = 0, int? Seed = null);
 
 /// <summary>
 /// Autoload at /root/NetSession (the same path on every peer, which RPCs need). Owns the p2p lobby and speaks Godot's
@@ -28,7 +28,6 @@ public sealed record StartRequest(SessionKind Kind, string? Code = null, bool Li
 /// </summary>
 public partial class NetSession : Node
 {
-  public const string DefaultServerUrl = "https://p2p.suresure.me";
   public const string Bucket = "curitibia";
 
   /// <summary>Bump when the handshake or RPC contract changes incompatibly.</summary>
@@ -44,6 +43,12 @@ public partial class NetSession : Node
   public SessionKind Kind { get; private set; } = SessionKind.Solo;
   public string PlayerName { get; set; } = "player";
   public string? RoomCode { get; private set; }
+
+  /// <summary>Why the last session ended or failed, for the menu to show once after returning to it.</summary>
+  public string? LastError { get; set; }
+
+  /// <summary>Peer id to display name for everyone in the room, the host (1) included. Kept in step on every peer.</summary>
+  public IReadOnlyDictionary<int, string> Roster => roster;
   public bool IsOnline => Kind != SessionKind.Solo;
   public bool IsHost => Kind != SessionKind.Client;
 
@@ -56,6 +61,7 @@ public partial class NetSession : Node
   public event Action<IReadOnlyList<FriendRoom>>? FriendRoomsReceived;
   public event Action<string>? Failed;
   public event Action<string>? Ended;
+  public event Action? RosterChanged;
 
   // World wiring (the world scene subscribes).
   public event Action<int>? SeedReceived;
@@ -70,6 +76,7 @@ public partial class NetSession : Node
   bool retriedWithoutFriends;
 
   readonly Dictionary<int, string> names = new();
+  readonly Dictionary<int, string> roster = new();
   readonly HashSet<int> synced = new();
   readonly Dictionary<int, (double second, int count)> editRate = new();
 
@@ -85,7 +92,15 @@ public partial class NetSession : Node
     Multiplayer.PeerDisconnected += OnPeerDisconnected;
     Multiplayer.ServerDisconnected += OnServerDisconnected;
 
-    PlayerName = DevArgs.Get("net-name") ?? System.Environment.UserName;
+    PlayerName = DevArgs.Get("net-name") ?? PlayerProfile.Name;
+
+    // The game has no server address of its own: the library reads P2P_SIGNALING_URL or ~/.p2p-signaling-server/server. For
+    // scripted runs --net-url points this process at another server (for example the local dev server) without touching
+    // that shared file.
+    if (DevArgs.Get("net-url") is { } devUrl)
+    {
+      ServerSettings.OverrideForThisRun(devUrl);
+    }
 
     if (DevArgs.Has("net-host"))
     {
@@ -111,8 +126,8 @@ public partial class NetSession : Node
       return lobby;
     }
 
-    var url = DevArgs.Get("net-url") ?? DefaultServerUrl;
-    lobby = new P2PLobby(url, Bucket, ProjectSettings.GetSetting("application/config/version", "dev").AsString())
+    // Url stays empty on purpose: the library then uses the machine's configured server and never saves one of ours.
+    lobby = new P2PLobby("", Bucket, ProjectSettings.GetSetting("application/config/version", "dev").AsString())
     {
       PlayerName = PlayerName,
     };
@@ -152,7 +167,7 @@ public partial class NetSession : Node
   public IReadOnlyList<string> FriendFileProblems => EnsureLobby().FriendFileProblems;
 
   /// <summary>Host an online room (the world is already running). Friends who have your id can see it.</summary>
-  public void OpenRoom(bool listForFriends)
+  public void OpenRoom(bool listForFriends, int maxPlayers = 0)
   {
     lobby?.Leave(); // drop the menu's browsing connection so the room starts from a clean lobby
     var l = EnsureLobby();
@@ -160,6 +175,7 @@ public partial class NetSession : Node
     retriedWithoutFriends = !listForFriends;
     l.PlayerName = PlayerName;
     l.ListForFriends = listForFriends;
+    l.MaxPlayers = maxPlayers;
     StatusChanged?.Invoke("Opening room...");
     l.CreateRoom();
   }
@@ -170,13 +186,15 @@ public partial class NetSession : Node
     var l = EnsureLobby();
     Kind = SessionKind.Client;
     l.PlayerName = PlayerName;
-    StatusChanged?.Invoke($"Joining {code}...");
-    l.JoinRoom(code.Trim().ToUpperInvariant());
+    RoomCode = code.Trim().ToUpperInvariant();
+    StatusChanged?.Invoke($"Joining {RoomCode}...");
+    l.JoinRoom(RoomCode);
   }
 
   public void StartSolo()
   {
     Kind = SessionKind.Solo;
+    RebuildRoster();
   }
 
   void OnLobbyFailed(string code, string message)
@@ -192,7 +210,36 @@ public partial class NetSession : Node
     }
 
     GD.PrintErr($"net failed: {code}: {message}");
-    Failed?.Invoke($"{message} ({code})");
+
+    var friendly = FriendlyFailure(code, message);
+    LastError = friendly;
+
+    // A host whose room never opened is just playing solo.
+    if (Kind == SessionKind.Host && RoomCode == null)
+    {
+      Kind = SessionKind.Solo;
+    }
+
+    Failed?.Invoke(friendly);
+  }
+
+  /// <summary>Plain-language versions of the library's failure codes (see the integration guide's troubleshooting table).</summary>
+  static string FriendlyFailure(string code, string message)
+  {
+    return code switch
+    {
+      "no_server_url" => "No server address is set. Open Settings and enter the server address.",
+      "room_not_found" => "Room not found. Check the code; the host may have left.",
+      "room_full" => "That room is full.",
+      "room_locked" => "The host is not accepting new players right now.",
+      "connect_timeout" => "Could not connect to the host. A strict network or firewall may be in the way.",
+      "bucket_not_found" or "bucket_disabled" => "The server does not have this game enabled.",
+      "rate_limited" or "locked_out" => "Too many attempts. Wait a minute and try again.",
+      "server_restarting" => "The server is restarting. Try again in a moment.",
+      "signaling_closed" or "connect_failed" => "Could not reach the server. Check the address in Settings and your connection.",
+      "webrtc_unavailable" => "This build is missing the WebRTC component (addons/webrtc_native).",
+      _ => $"{message} ({code})",
+    };
   }
 
   /// <summary>Tear the session down and return to offline play state. The caller changes scenes.</summary>
@@ -206,6 +253,7 @@ public partial class NetSession : Node
   void End(string reason)
   {
     GD.Print($"session ended: {reason}");
+    LastError = char.ToUpperInvariant(reason[0]) + reason[1..] + ".";
     Leave();
     Ended?.Invoke(reason);
   }
@@ -217,6 +265,7 @@ public partial class NetSession : Node
     names.Clear();
     synced.Clear();
     editRate.Clear();
+    roster.Clear();
 
     if (terrain != null)
     {
@@ -292,6 +341,7 @@ public partial class NetSession : Node
 
     if (synced.Remove(peer))
     {
+      RebuildRoster();
       PeerGone?.Invoke(peer);
     }
   }
@@ -358,6 +408,7 @@ public partial class NetSession : Node
       return;
     }
 
+    RebuildRoster();
     PeerReady?.Invoke(sender);
   }
 
@@ -425,6 +476,19 @@ public partial class NetSession : Node
   }
 
   [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcRoster(Godot.Collections.Dictionary received)
+  {
+    roster.Clear();
+
+    foreach (var key in received.Keys)
+    {
+      roster[key.AsInt32()] = received[key].AsString();
+    }
+
+    RosterChanged?.Invoke();
+  }
+
+  [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
   void RpcRejected(string reason)
   {
     Failed?.Invoke(reason);
@@ -432,6 +496,37 @@ public partial class NetSession : Node
   }
 
   // ------------------------------------------------------------------ helpers
+
+  /// <summary>Host: recompute the roster (host plus every synced peer) and tell everyone.</summary>
+  void RebuildRoster()
+  {
+    roster.Clear();
+    roster[1] = PlayerName;
+
+    foreach (var peer in synced)
+    {
+      roster[peer] = names.TryGetValue(peer, out var n) ? n : $"peer {peer}";
+    }
+
+    RosterChanged?.Invoke();
+
+    if (Kind != SessionKind.Host)
+    {
+      return;
+    }
+
+    var wire = new Godot.Collections.Dictionary();
+
+    foreach (var (peer, name) in roster)
+    {
+      wire[peer] = name;
+    }
+
+    foreach (var peer in synced)
+    {
+      RpcId(peer, MethodName.RpcRoster, wire);
+    }
+  }
 
   public string NameOf(int peer)
   {

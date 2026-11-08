@@ -1,4 +1,5 @@
 using Curitibia.Core;
+using Curitibia.Enemies;
 using Curitibia.Net;
 using Curitibia.Player;
 using Curitibia.UI;
@@ -21,6 +22,7 @@ public partial class Main : Node3D
   [Export] public Node3D Players { get; set; } = null!;
   [Export] public PackedScene PlayerScene { get; set; } = null!;
   [Export] public MultiplayerSpawner PlayerSpawner { get; set; } = null!;
+  [Export] public EnemySpawner EnemySpawner { get; set; } = null!;
   [Export] public Hud Hud { get; set; } = null!;
 
   const int SettleFrames = 20;
@@ -29,6 +31,7 @@ public partial class Main : Node3D
   NetSession session = null!;
   string? screenshotPath;
   int settledFrames;
+  bool hasLocalPlayer;
 
   public override void _Ready()
   {
@@ -46,19 +49,22 @@ public partial class Main : Node3D
     session.PeerGone += DespawnPlayerFor;
     session.PlayerPositionProvider = PlayerPosition;
 
+    session.Failed += OnSessionFailed;
+
     if (request.Kind == SessionKind.Client)
     {
       StartAsClient(request.Code ?? "");
     }
     else
     {
-      StartAsHost(request.Kind == SessionKind.Host, request.ListForFriends);
+      StartAsHost(request);
     }
   }
 
   public override void _ExitTree()
   {
     session.Ended -= OnSessionEnded;
+    session.Failed -= OnSessionFailed;
     session.PeerReady -= SpawnPlayerFor;
     session.PeerGone -= DespawnPlayerFor;
     session.PlayerPositionProvider = null;
@@ -67,9 +73,10 @@ public partial class Main : Node3D
 
   // ------------------------------------------------------------------ start-up
 
-  void StartAsHost(bool online, bool listForFriends)
+  void StartAsHost(StartRequest request)
   {
-    var seed = DevArgs.GetInt("seed") ?? (int)(GD.Randi() & 0x7fffffff);
+    var online = request.Kind == SessionKind.Host;
+    var seed = request.Seed ?? DevArgs.GetInt("seed") ?? (int)(GD.Randi() & 0x7fffffff);
     session.WorldSeed = seed;
     GD.Print($"World seed {seed}");
 
@@ -78,18 +85,28 @@ public partial class Main : Node3D
 
     if (online)
     {
-      session.OpenRoom(listForFriends);
+      session.OpenRoom(request.ListForFriends, request.MaxPlayers);
     }
 
     session.AttachWorld(WorldTerrain);
 
     if (DevArgs.Cam is { } cam)
     {
+      if (DevArgs.Has("show-self"))
+      {
+        SpawnPlayerFor(1); // a visible player in front of the spectator camera, for screenshots
+      }
+
       SpawnSpectator(cam.position, cam.yaw, cam.pitch);
     }
     else
     {
       SpawnPlayerFor(1);
+    }
+
+    if (!DevArgs.Has("no-enemies"))
+    {
+      EnemySpawner.SpawnAround(0, 0);
     }
   }
 
@@ -150,6 +167,7 @@ public partial class Main : Node3D
     // The HUD follows the player this peer controls (replicated players arrive through the spawner).
     if (node is PlayerController { IsLocal: true } player)
     {
+      hasLocalPlayer = true;
       Hud.Bind(player);
     }
   }
@@ -167,6 +185,22 @@ public partial class Main : Node3D
     AddChild(viewer);
     viewer.GlobalPosition = position;
     WorldTerrain.AddViewer(viewer);
+  }
+
+  /// <summary>
+  /// A client that never got into the room goes back to the menu with the reason (NetSession kept it in LastError). A host
+  /// whose room could not be opened carries on offline; the HUD tells the player.
+  /// </summary>
+  void OnSessionFailed(string message)
+  {
+    if (session.Kind != SessionKind.Client || hasLocalPlayer)
+    {
+      return;
+    }
+
+    session.Leave();
+    Input.MouseMode = Input.MouseModeEnum.Visible;
+    GetTree().ChangeSceneToFile(MenuScene);
   }
 
   void OnSessionEnded(string reason)

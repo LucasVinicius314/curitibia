@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Curitibia.Combat;
 using Curitibia.Core;
 using Curitibia.World;
 using Godot;
@@ -10,13 +12,15 @@ namespace Curitibia.Player;
 /// shows the replicated state (Sync* properties, replicated by a MultiplayerSynchronizer in the prefab) smoothed in
 /// _Process. Walking, jumping and the one-block step-up live here; looking and block editing are separate nodes/parts.
 /// </summary>
-public partial class PlayerController : CharacterBody3D
+public partial class PlayerController : CharacterBody3D, IDamageable
 {
   [Export] public PlayerTuning Tuning { get; set; } = null!;
   [Export] public Node3D CameraPivot { get; set; } = null!;
   [Export] public Camera3D Camera { get; set; } = null!;
   [Export] public PlayerVisual Visual { get; set; } = null!;
   [Export] public BlockInteractor Interactor { get; set; } = null!;
+  [Export] public Health Health { get; set; } = null!;
+  [Export] public MultiplayerSynchronizer HealthSync { get; set; } = null!;
 
   // Replicated state (the authority writes it every physics tick, everyone else reads it).
   [Export] public Vector3 SyncPosition { get; set; }
@@ -25,7 +29,13 @@ public partial class PlayerController : CharacterBody3D
   [Export] public Vector3 SyncVelocity { get; set; }
   [Export] public bool SyncGrounded { get; set; }
 
+  /// <summary>Every player in the scene (kept by enter/exit, so enemies never scan the tree).</summary>
+  public static readonly List<PlayerController> All = new();
+
   public Team Team => Team.Players;
+
+  /// <summary>Where this player looks from.</summary>
+  public Vector3 EyePosition => CameraPivot.GlobalPosition;
 
   /// <summary>True on the peer that controls this player (always true offline).</summary>
   public bool IsLocal => IsMultiplayerAuthority();
@@ -34,14 +44,19 @@ public partial class PlayerController : CharacterBody3D
   public Aabb BodyBounds => new(GlobalPosition + new Vector3(-0.4f, 0f, -0.4f), new Vector3(0.8f, 1.8f, 0.8f));
 
   const float BodyRadius = 0.4f;
+  const float BumpCooldownSeconds = 0.4f;
   const float JumpBufferSeconds = 0.12f;
   const float CoyoteSeconds = 0.1f;
 
   readonly KinematicCollision3D probe = new();
 
+  // Last two tick positions, so the camera glides between ticks at any frame rate (see TickSmoother).
+  TickSmoother smoother;
+
   float gravity;
   float pitch;
   float jumpBuffer;
+  float bumpCooldown;
   float coyote;
   float cameraBaseY;
   float stepCameraOffset;
@@ -54,6 +69,10 @@ public partial class PlayerController : CharacterBody3D
     {
       SetMultiplayerAuthority(peerId);
     }
+
+    // The owner drives the body, but hit points belong to the host: the host owns the health synchronizer.
+    HealthSync.SetMultiplayerAuthority(1);
+    All.Add(this);
   }
 
   public override void _Ready()
@@ -71,13 +90,21 @@ public partial class PlayerController : CharacterBody3D
       SyncPosition = GlobalPosition;
     }
 
+    smoother.Reset(GlobalPosition);
     Terrain.Instance?.AddViewer(this);
+
+    if (Multiplayer.IsServer())
+    {
+      Health.Died += OnDiedOnHost;
+    }
 
     if (IsLocal)
     {
       Camera.MakeCurrent();
+      Camera.Fov = GameSettings.FieldOfView;
+      GameSettings.Changed += OnSettingsChanged;
       Input.MouseMode = Input.MouseModeEnum.Captured;
-      Visual.Visible = false; // first person: do not draw our own body around the camera
+      Visual.Visible = DevArgs.Has("show-self"); // first person: do not draw our own body around the camera
     }
     else
     {
@@ -86,8 +113,15 @@ public partial class PlayerController : CharacterBody3D
     }
   }
 
+  void OnSettingsChanged()
+  {
+    Camera.Fov = GameSettings.FieldOfView;
+  }
+
   public override void _ExitTree()
   {
+    GameSettings.Changed -= OnSettingsChanged;
+    All.Remove(this);
     Terrain.Instance?.RemoveViewer(this);
   }
 
@@ -133,6 +167,7 @@ public partial class PlayerController : CharacterBody3D
   public override void _Process(double delta)
   {
     var dt = (float)delta;
+    Visual.Ghost = Health.IsDead;
 
     if (IsLocal)
     {
@@ -140,12 +175,15 @@ public partial class PlayerController : CharacterBody3D
 
       if (stick != Vector2.Zero && Input.MouseMode == Input.MouseModeEnum.Captured)
       {
-        Look(-stick.X * Tuning.StickSensitivity * dt, -stick.Y * Tuning.StickSensitivity * dt);
+        // Squared response: small deflections turn slowly (fine aim), full deflection turns at StickSensitivity.
+        var curved = stick * stick.Length();
+        Look(-curved.X * Tuning.StickSensitivity * dt, -curved.Y * Tuning.StickSensitivity * dt);
       }
 
       // Ease the camera back down after a step-up so climbing a block is not a pop.
       stepCameraOffset = Mathf.Lerp(stepCameraOffset, 0f, 1f - Mathf.Exp(-14f * dt));
-      CameraPivot.Position = new Vector3(0f, cameraBaseY + stepCameraOffset, 0f);
+      var glide = GlobalTransform.Basis.Inverse() * (smoother.Blend(GlobalPosition) - GlobalPosition);
+      CameraPivot.Position = new Vector3(0f, cameraBaseY + stepCameraOffset, 0f) + glide;
 
       Visual.Animate(dt, Velocity, IsOnFloor(), pitch);
       return;
@@ -176,6 +214,7 @@ public partial class PlayerController : CharacterBody3D
     {
       Velocity = Vector3.Zero;
       Publish();
+      smoother.Record(GlobalPosition);
       return;
     }
 
@@ -188,7 +227,9 @@ public partial class PlayerController : CharacterBody3D
     var velocity = Velocity;
 
     // Horizontal: smooth toward the wish direction, independent of frame rate.
-    var move = Input.MouseMode == Input.MouseModeEnum.Captured
+    var alive = !Health.IsDead;
+
+    var move = alive && Input.MouseMode == Input.MouseModeEnum.Captured
       ? Input.GetVector(Actions.MoveLeft, Actions.MoveRight, Actions.MoveForward, Actions.MoveBack)
       : Vector2.Zero;
 
@@ -205,7 +246,7 @@ public partial class PlayerController : CharacterBody3D
 
     // Vertical: gravity, jump buffer and a little coyote time.
     coyote = onFloor ? CoyoteSeconds : coyote - dt;
-    jumpBuffer = Input.IsActionJustPressed(Actions.Jump) ? JumpBufferSeconds : jumpBuffer - dt;
+    jumpBuffer = alive && Input.IsActionJustPressed(Actions.Jump) ? JumpBufferSeconds : jumpBuffer - dt;
 
     if (onFloor)
     {
@@ -233,11 +274,13 @@ public partial class PlayerController : CharacterBody3D
     }
 
     MoveAndSlide();
+    BumpAgainstEnemies(dt);
 
     // If we ran into something, do not keep pushing into it with stored speed.
     horizontal = new Vector3(Velocity.X, 0f, Velocity.Z);
 
     Publish();
+    smoother.Record(GlobalPosition);
   }
 
   /// <summary>
@@ -296,6 +339,7 @@ public partial class PlayerController : CharacterBody3D
     }
 
     GlobalPosition += Vector3.Up * (rise + 0.005f);
+    smoother.Reset(GlobalPosition);
     stepCameraOffset -= rise;
   }
 
@@ -306,6 +350,7 @@ public partial class PlayerController : CharacterBody3D
     var height = Terrain.Instance?.SurfaceHeightAt(x, z) ?? 20f;
 
     GlobalPosition = new Vector3(x + 0.5f, height + 2f, z + 0.5f);
+    smoother.Reset(GlobalPosition);
     Velocity = Vector3.Zero;
     horizontal = Vector3.Zero;
   }
@@ -317,6 +362,123 @@ public partial class PlayerController : CharacterBody3D
     SyncPitch = pitch;
     SyncVelocity = Velocity;
     SyncGrounded = IsOnFloor();
+  }
+
+  /// <summary>
+  /// Unity's OnCollisionEnter: running into an enemy shoves you away, (normal * 2 + up) normalised, scaled by 2. Only the
+  /// owner of the body applies it (the same peer that simulates the movement).
+  /// </summary>
+  void BumpAgainstEnemies(float dt)
+  {
+    bumpCooldown -= dt;
+
+    if (bumpCooldown > 0f)
+    {
+      return;
+    }
+
+    for (int i = 0; i < GetSlideCollisionCount(); i++)
+    {
+      var hit = GetSlideCollision(i);
+
+      if (hit.GetCollider() is CollisionObject3D other && (other.CollisionLayer & GameLayers.Enemy) != 0)
+      {
+        ApplyKnockback((hit.GetNormal() * 2f + Vector3.Up).Normalized() * 2f);
+        bumpCooldown = BumpCooldownSeconds;
+        return;
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ damage (host decides, owner applies the motion)
+
+  /// <summary>Host only (projectiles call this on the host).</summary>
+  public void TakeDamage(DamageInfo info)
+  {
+    if (!Multiplayer.IsServer() || Health.IsDead)
+    {
+      return;
+    }
+
+    Health.Damage(info.Amount);
+
+    var flat = new Vector3(info.Direction.X, 0f, info.Direction.Z).Normalized();
+    var impulse = flat * info.Knockback + Vector3.Up * 2f;
+    var owner = GetMultiplayerAuthority();
+
+    if (owner == Multiplayer.GetUniqueId())
+    {
+      ApplyKnockback(impulse);
+    }
+    else
+    {
+      RpcId(owner, MethodName.RpcKnockback, impulse);
+    }
+  }
+
+  void OnDiedOnHost()
+  {
+    GD.Print($"player {Name} died");
+
+    GetTree().CreateTimer(3.0).Timeout += () =>
+    {
+      if (!IsInsideTree())
+      {
+        return;
+      }
+
+      Health.Reset();
+      var spawn = SpawnPoint(VoxelMath.FloorToInt(GlobalPosition.X), VoxelMath.FloorToInt(GlobalPosition.Z));
+      var owner = GetMultiplayerAuthority();
+
+      if (owner == Multiplayer.GetUniqueId())
+      {
+        DoRespawn(spawn);
+      }
+      else
+      {
+        RpcId(owner, MethodName.RpcRespawn, spawn);
+      }
+    };
+  }
+
+  [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcKnockback(Vector3 impulse)
+  {
+    if (Multiplayer.GetRemoteSenderId() == 1)
+    {
+      ApplyKnockback(impulse);
+    }
+  }
+
+  [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcRespawn(Vector3 position)
+  {
+    if (Multiplayer.GetRemoteSenderId() == 1)
+    {
+      DoRespawn(position);
+    }
+  }
+
+  void ApplyKnockback(Vector3 impulse)
+  {
+    if (IsLocal)
+    {
+      Input.StartJoyVibration(0, 0.4f, 0.6f, 0.25f); // a short rumble on a controller; nothing without one
+    }
+
+    // Both the smoothed walk velocity and the body velocity get the push: the movement code rebuilds one from the other.
+    horizontal += new Vector3(impulse.X, 0f, impulse.Z);
+    Velocity = new Vector3(Velocity.X + impulse.X, Math.Max(Velocity.Y, impulse.Y), Velocity.Z + impulse.Z);
+  }
+
+  void DoRespawn(Vector3 position)
+  {
+    GlobalPosition = position;
+    SyncPosition = position;
+    smoother.Reset(position);
+    Velocity = Vector3.Zero;
+    horizontal = Vector3.Zero;
   }
 
   /// <summary>A spot just above the terrain surface at a world column, for spawning (set before adding to the tree).</summary>

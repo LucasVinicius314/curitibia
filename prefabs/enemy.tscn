@@ -1,0 +1,41 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/Enemies/Enemy.cs" id="1"]
+[ext_resource type="Resource" path="res://data/enemy_tuning.tres" id="2"]
+[ext_resource type="Script" path="res://src/Enemies/EnemyVisual.cs" id="3"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_1"]
+properties/0/path = NodePath(".:SyncPosition")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath(".:SyncYaw")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath(".:SyncVelocity")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:SyncGrounded")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+
+[node name="Enemy" type="CharacterBody3D" node_paths=PackedStringArray("Visual")]
+collision_layer = 4
+collision_mask = 1
+floor_snap_length = 0.35
+script = ExtResource("1")
+Tuning = ExtResource("2")
+Visual = NodePath("Visual")
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_1")
+
+[node name="Visual" type="Node3D" parent="."]
+script = ExtResource("3")
+
+[node name="Synchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_1")

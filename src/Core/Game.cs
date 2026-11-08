@@ -19,6 +19,7 @@ public static class Actions
   public static readonly StringName NextBlock = "next_block";
   public static readonly StringName PrevBlock = "prev_block";
   public static readonly StringName Pause = "pause";
+  public static readonly StringName Roster = "roster";
 }
 
 /// <summary>
@@ -39,6 +40,7 @@ public partial class Game : Node
     AddKeys(Actions.MoveRight, Key.D, Key.Right);
     AddKeys(Actions.Jump, Key.Space);
     AddKeys(Actions.Pause, Key.Escape);
+    AddKeys(Actions.Roster, Key.Tab);
 
     AddAxis(Actions.MoveForward, JoyAxis.LeftY, -1f);
     AddAxis(Actions.MoveBack, JoyAxis.LeftY, 1f);
@@ -49,6 +51,10 @@ public partial class Game : Node
     AddAxis(Actions.LookUp, JoyAxis.RightY, -1f);
     AddAxis(Actions.LookDown, JoyAxis.RightY, 1f);
     AddButton(Actions.Jump, JoyButton.A);
+    AddButton(Actions.Pause, JoyButton.Start);
+    AddButton(Actions.Roster, JoyButton.Back);
+    AddButton(Actions.NextBlock, JoyButton.RightShoulder);
+    AddButton(Actions.PrevBlock, JoyButton.LeftShoulder);
 
     AddMouse(Actions.BreakBlock, MouseButton.Left);
     AddMouse(Actions.PlaceBlock, MouseButton.Right);

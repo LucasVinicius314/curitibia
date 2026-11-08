@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using Curitibia.Core;
+using Curitibia.Enemies;
 using Curitibia.Player;
 using Curitibia.World;
 using Godot;
@@ -73,7 +74,16 @@ public partial class NetDevHooks : Node
       foreach (var player in players.GetChildren().OfType<PlayerController>().OrderBy(p => p.Name.ToString()))
       {
         var pos = player.GlobalPosition;
-        GD.Print($"NET REPORT player {player.Name} local={player.IsLocal} pos=({pos.X:0.0},{pos.Y:0.0},{pos.Z:0.0})");
+        GD.Print($"NET REPORT player {player.Name} local={player.IsLocal} hp={player.Health.Hp:0} pos=({pos.X:0.0},{pos.Y:0.0},{pos.Z:0.0})");
+      }
+    }
+
+    if (GetTree().Root.FindChild("Enemies", true, false) is Node enemies)
+    {
+      foreach (var enemy in enemies.GetChildren().OfType<Enemy>().OrderBy(e => e.Name.ToString()))
+      {
+        var pos = enemy.GlobalPosition;
+        GD.Print($"NET REPORT enemy {enemy.Name} pos=({pos.X:0},{pos.Y:0},{pos.Z:0})");
       }
     }
   }

@@ -1,0 +1,24 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/Combat/Projectile.cs" id="1"]
+[ext_resource type="Script" path="res://src/Combat/RibbonTrail.cs" id="2"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_1"]
+radius = 0.15
+height = 0.3
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
+albedo_color = Color(0.3113, 0.3113, 0.3113, 1)
+roughness = 0.5
+
+[node name="Projectile" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+material_override = SubResource("StandardMaterial3D_1")
+mesh = SubResource("SphereMesh_1")
+
+[node name="Trail" type="MeshInstance3D" parent="."]
+script = ExtResource("2")

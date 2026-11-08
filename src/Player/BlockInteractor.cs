@@ -95,7 +95,7 @@ public partial class BlockInteractor : Node
   {
     var terrain = Terrain.Instance;
 
-    if (terrain == null || highlight == null)
+    if (terrain == null || highlight == null || Player.Health.IsDead)
     {
       return;
     }

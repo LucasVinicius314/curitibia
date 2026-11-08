@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyTuning" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/Enemies/EnemyTuning.cs" id="1"]
+
+[resource]
+script = ExtResource("1")
+Speed = 2.6
+WanderSpeedFactor = 0.45
+JumpVelocity = 5.5
+VisionRange = 13.0
+FieldOfViewHalfAngle = 70.0
+AwarenessRadius = 3.0
+MemorySeconds = 3.0
+ThinkInterval = 0.2
+HoldDistance = 6.0
+ShootRange = 12.0
+ShootCooldown = 1.6
+AimError = 3.0
+TurnSpeed = 6.0
+WanderRadius = 8
