@@ -13,6 +13,9 @@ public partial class ItemBehavior : Resource
   /// <summary>Seconds between uses.</summary>
   [Export] public float Cooldown { get; set; } = 0.25f;
 
+  /// <summary>Seconds after the use is announced before the host applies it, so damage lands when the swing connects (0 = at once).</summary>
+  [Export] public float HitDelay { get; set; }
+
   /// <summary>The use is announced to every peer (so they can animate it) and resolved on the host through HostUse.</summary>
   public virtual bool Announces => false;
 

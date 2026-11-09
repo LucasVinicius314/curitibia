@@ -89,9 +89,29 @@ public class VoxelRaycastTests
 
 public class WorldGeneratorTests
 {
+  /// <summary>True when two chunks hold the same block everywhere.</summary>
+  public static bool Same(ChunkData a, ChunkData b)
+  {
+    for (int y = 0; y < VoxelMath.ChunkHeight; y++)
+    {
+      for (int z = 0; z < VoxelMath.ChunkSize; z++)
+      {
+        for (int x = 0; x < VoxelMath.ChunkSize; x++)
+        {
+          if (a.Get(x, y, z) != b.Get(x, y, z))
+          {
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
   static WorldGenerator Make(int seed)
   {
-    return new WorldGenerator(new WorldGenParams(seed, 0.04f, 10f, 16f, 2));
+    return new WorldGenerator(new WorldGenParams(seed, 0.04f, 700f, 2));
   }
 
   [Fact]
@@ -100,7 +120,7 @@ public class WorldGeneratorTests
     var a = Make(1234).GenerateChunk(-2, 3);
     var b = Make(1234).GenerateChunk(-2, 3);
 
-    Assert.True(a.AsSpan().SequenceEqual(b));
+    Assert.True(Same(a, b));
   }
 
   [Fact]
@@ -109,7 +129,7 @@ public class WorldGeneratorTests
     var a = Make(1).GenerateChunk(0, 0);
     var b = Make(2).GenerateChunk(0, 0);
 
-    Assert.False(a.AsSpan().SequenceEqual(b));
+    Assert.False(Same(a, b));
   }
 
   [Fact]
@@ -120,40 +140,36 @@ public class WorldGeneratorTests
     // Heights are a function of world position, so neighbouring columns never jump arbitrarily.
     for (int wx = -70; wx < 70; wx++)
     {
-      Assert.InRange(Math.Abs(g.ColumnHeight(wx, 5) - g.ColumnHeight(wx + 1, 5)), 0, 3);
+      Assert.InRange(Math.Abs(g.ColumnHeight(wx, 5) - g.ColumnHeight(wx + 1, 5)), 0, 6);
     }
   }
 
   [Fact]
-  public void Column_has_grass_on_top_over_soil_over_stone()
+  public void Column_has_the_biome_surface_over_filler_over_stone()
   {
     var g = Make(7);
     var blocks = g.GenerateChunk(0, 0);
     var h = g.ColumnHeight(4, 9);
+    var biome = Biomes.Get(g.Column(4, 9).SurfaceBiome);
 
-    Assert.Equal(BlockIds.Grass, blocks[VoxelMath.Index(4, h - 1, 9)]);
-    Assert.Equal(BlockIds.Air, h < VoxelMath.ChunkHeight ? blocks[VoxelMath.Index(4, h, 9)] : BlockIds.Air);
-
-    if (h > 1)
-    {
-      Assert.Equal(BlockIds.Stone, blocks[VoxelMath.Index(4, h - 2, 9)]);
-    Assert.Equal(BlockIds.Stone, blocks[VoxelMath.Index(4, 0, 9)]);
-    }
+    Assert.Equal(biome.SurfaceAt(h - 700), blocks.Get(4, h - 1, 9));
+    Assert.Equal(BlockIds.Air, blocks.Get(4, h, 9));
+    Assert.Equal(BlockIds.Hellrock, blocks.Get(4, 0, 9)); // the bottom of the world is the underworld's rock
   }
 }
 
 public class ChunkMesherTests
 {
-  static MeshData Mesh(byte[] blocks, byte[]?[]? neighbours = null)
+  static MeshData Mesh(ChunkData blocks, ChunkData?[]? neighbours = null)
   {
-    return ChunkMesher.Build(blocks, neighbours ?? new byte[]?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+    return ChunkMesher.Build(blocks, neighbours ?? new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
   }
 
   [Fact]
   public void Single_block_in_the_air_has_six_faces()
   {
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(5, 10, 5)] = BlockIds.Stone;
+    var blocks = new ChunkData();
+    blocks.Set(5, 10, 5, BlockIds.Stone);
 
     var mesh = Mesh(blocks);
 
@@ -164,9 +180,9 @@ public class ChunkMesherTests
   [Fact]
   public void Touching_blocks_hide_their_shared_faces()
   {
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(5, 10, 5)] = BlockIds.Stone;
-    blocks[VoxelMath.Index(6, 10, 5)] = BlockIds.Stone;
+    var blocks = new ChunkData();
+    blocks.Set(5, 10, 5, BlockIds.Stone);
+    blocks.Set(6, 10, 5, BlockIds.Stone);
 
     Assert.Equal(10 * 2, Mesh(blocks).TriangleCount);
   }
@@ -174,8 +190,8 @@ public class ChunkMesherTests
   [Fact]
   public void Bottom_of_the_world_has_no_floor_faces()
   {
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(5, 0, 5)] = BlockIds.Stone;
+    var blocks = new ChunkData();
+    blocks.Set(5, 0, 5, BlockIds.Stone);
 
     Assert.Equal(5 * 2, Mesh(blocks).TriangleCount);
   }
@@ -183,15 +199,15 @@ public class ChunkMesherTests
   [Fact]
   public void Chunk_border_face_is_hidden_by_a_solid_neighbour_and_shown_by_an_empty_one()
   {
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(VoxelMath.ChunkSize - 1, 10, 5)] = BlockIds.Stone;
+    var blocks = new ChunkData();
+    blocks.Set(VoxelMath.ChunkSize - 1, 10, 5, BlockIds.Stone);
 
-    var solidNeighbour = new byte[VoxelMath.ChunkVolume];
-    solidNeighbour[VoxelMath.Index(0, 10, 5)] = BlockIds.Stone;
-    var emptyNeighbour = new byte[VoxelMath.ChunkVolume];
+    var solidNeighbour = new ChunkData();
+    solidNeighbour.Set(0, 10, 5, BlockIds.Stone);
+    var emptyNeighbour = new ChunkData();
 
-    var hidden = Mesh(blocks, new byte[]?[] { solidNeighbour, emptyNeighbour, emptyNeighbour, emptyNeighbour });
-    var shown = Mesh(blocks, new byte[]?[] { emptyNeighbour, emptyNeighbour, emptyNeighbour, emptyNeighbour });
+    var hidden = Mesh(blocks, new ChunkData?[] { solidNeighbour, emptyNeighbour, emptyNeighbour, emptyNeighbour });
+    var shown = Mesh(blocks, new ChunkData?[] { emptyNeighbour, emptyNeighbour, emptyNeighbour, emptyNeighbour });
 
     Assert.Equal(5 * 2, hidden.TriangleCount);
     Assert.Equal(6 * 2, shown.TriangleCount);
@@ -200,8 +216,8 @@ public class ChunkMesherTests
   [Fact]
   public void Triangles_wind_clockwise_seen_from_outside()
   {
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(5, 10, 5)] = BlockIds.Stone;
+    var blocks = new ChunkData();
+    blocks.Set(5, 10, 5, BlockIds.Stone);
 
     var mesh = Mesh(blocks);
 
@@ -235,9 +251,9 @@ public class ChunkMesherTests
   [Fact]
   public void Uvs_stay_inside_the_tiles_row()
   {
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(5, 10, 5)] = BlockIds.Stone;
-    blocks[VoxelMath.Index(7, 10, 5)] = BlockIds.Grass;
+    var blocks = new ChunkData();
+    blocks.Set(5, 10, 5, BlockIds.Stone);
+    blocks.Set(7, 10, 5, BlockIds.Grass);
 
     var mesh = Mesh(blocks);
 
@@ -250,12 +266,12 @@ public class TallChunkMeshTests
   [Fact]
   public void A_block_high_in_a_tall_column_is_meshed_and_an_empty_column_is_not()
   {
-    var empty = ChunkMesher.Build(new byte[VoxelMath.ChunkVolume], new byte[]?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+    var empty = ChunkMesher.Build(new ChunkData(), new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
     Assert.Equal(0, empty.TriangleCount);
 
-    var blocks = new byte[VoxelMath.ChunkVolume];
-    blocks[VoxelMath.Index(5, VoxelMath.ChunkHeight - 1, 5)] = BlockIds.Stone;
-    var tower = ChunkMesher.Build(blocks, new byte[]?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+    var blocks = new ChunkData();
+    blocks.Set(5, VoxelMath.ChunkHeight - 1, 5, BlockIds.Stone);
+    var tower = ChunkMesher.Build(blocks, new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
 
     Assert.Equal(12, tower.TriangleCount);
   }
@@ -267,15 +283,15 @@ public class TreeTests
 
   static WorldGenerator Generator()
   {
-    return new WorldGenerator(new WorldGenParams(Seed, 0.02f, 20f, 50f, 2));
+    return new WorldGenerator(new WorldGenParams(Seed, 0.02f, 700f, 3));
   }
 
   [Fact]
   public void Whole_trees_appear_even_when_they_cross_chunk_borders()
   {
     var generator = Generator();
-    var feature = new TreeFeature(Seed, generator.ColumnHeight);
-    var chunks = new System.Collections.Generic.Dictionary<(int, int), byte[]>();
+    var feature = new TreeFeature(Seed, generator.ColumnHeight, generator.TreeDensityAt, generator.TreeKindAt);
+    var chunks = new System.Collections.Generic.Dictionary<(int, int), ChunkData>();
 
     byte At(int wx, int y, int wz)
     {
@@ -286,13 +302,13 @@ public class TreeTests
         chunks[(cx, cz)] = blocks = generator.GenerateChunk(cx, cz);
       }
 
-      return VoxelMath.Get(blocks, lx, y, lz);
+      return blocks.Get(lx, y, lz);
     }
 
     var trees = 0;
     var crossing = 0;
 
-    feature.ForTreesNear(-100, -100, 100, 100, tree =>
+    feature.ForTreesNear(-400, -400, 400, 400, tree =>
     {
       trees++;
 
@@ -310,7 +326,7 @@ public class TreeTests
           {
             if (tree.IsTrunk(x, y, z))
             {
-              Assert.Equal(BlockIds.Wood, At(x, y, z));
+              Assert.Equal(tree.TrunkBlock, At(x, y, z));
             }
             else if (tree.IsLeaf(x, y, z))
             {
@@ -331,25 +347,79 @@ public class TreeTests
     var a = Generator().GenerateChunk(0, 0);
     var b = Generator().GenerateChunk(0, 0);
 
-    Assert.Equal(a, b);
-    Assert.True(a.Length < VoxelMath.ChunkVolume); // trimmed to the layers in use
+    Assert.True(WorldGeneratorTests.Same(a, b));
+    Assert.True(a.Bytes < 400_000); // rock all through and open sky cost nothing, caves a bitmask
 
-    var feature = new TreeFeature(Seed, Generator().ColumnHeight);
+    var feature = new TreeFeature(Seed, Generator().ColumnHeight, Generator().TreeDensityAt, Generator().TreeKindAt);
     Assert.Equal(0, feature.TopAt(0, 0));
   }
 
   [Fact]
-  public void EnsureHeight_grows_by_layers_and_keeps_contents()
+  public void Chunk_sections_cost_nothing_until_something_varies()
   {
-    var blocks = new byte[VoxelMath.LayerSize * VoxelMath.LayerStep];
-    blocks[5] = 9;
+    var chunk = new ChunkData();
 
-    var same = VoxelMath.EnsureHeight(blocks, 3);
-    var grown = VoxelMath.EnsureHeight(blocks, 40);
+    for (int section = 0; section < 40; section++)
+    {
+      chunk.FillSection(section, BlockIds.Stone);
+    }
 
-    Assert.Same(blocks, same);
-    Assert.Equal(VoxelMath.LayerSize * 48, grown.Length);
-    Assert.Equal(9, grown[5]);
-    Assert.Equal(0, VoxelMath.Get(blocks, 1, 200, 1));
+    Assert.Equal(0, chunk.AllocatedSections);
+    Assert.Equal(BlockIds.Stone, chunk.Get(3, 100, 4));
+    Assert.Equal(BlockIds.Air, chunk.Get(3, 900, 4));
+
+    chunk.Set(3, 100, 4, BlockIds.Air); // a hole in the rock: this one section now has an array
+    chunk.Set(7, 100, 4, BlockIds.Stone); // setting the block that is already there allocates nothing more
+
+    Assert.Equal(1, chunk.AllocatedSections);
+    Assert.Equal(BlockIds.Air, chunk.Get(3, 100, 4));
+    Assert.Equal(BlockIds.Stone, chunk.Get(3, 101, 4));
+    Assert.Equal(BlockIds.Stone, chunk.Get(7, 100, 4));
+
+    chunk.Set(3, 100, 4, BlockIds.Stone);
+    chunk.Compact();
+
+    Assert.Equal(0, chunk.AllocatedSections); // filled back in: it is one block again
+    Assert.Equal(40 * ChunkData.SectionHeight, chunk.TopLayer());
+    Assert.Equal(40 * ChunkData.SectionHeight, chunk.TopLayer(5, 5));
+    Assert.Equal(0, new ChunkData().TopLayer(5, 5));
+  }
+
+  [Fact]
+  public void A_section_with_two_kinds_of_block_is_a_small_mask_and_with_three_a_full_array()
+  {
+    var chunk = new ChunkData();
+    chunk.FillSection(10, BlockIds.Stone);
+
+    chunk.Set(1, 170, 1, BlockIds.Air);
+    chunk.Set(2, 171, 2, BlockIds.Air);
+    var masked = chunk.Bytes;
+
+    Assert.InRange(masked, 1, 4096); // rock and air: a bitmask, not 16 KB
+
+    chunk.Set(3, 172, 3, BlockIds.Magma); // a third kind
+    var expanded = chunk.Bytes;
+
+    Assert.True(expanded > 10000);
+    Assert.Equal(BlockIds.Air, chunk.Get(1, 170, 1));
+    Assert.Equal(BlockIds.Air, chunk.Get(2, 171, 2));
+    Assert.Equal(BlockIds.Magma, chunk.Get(3, 172, 3));
+    Assert.Equal(BlockIds.Stone, chunk.Get(4, 173, 4)); // what the mask held survived the change
+
+    chunk.Compact();
+    Assert.Equal(expanded, chunk.Bytes); // three kinds: it stays a full array
+  }
+
+  [Fact]
+  public void Reads_outside_the_world_are_air_and_writes_are_ignored()
+  {
+    var chunk = new ChunkData();
+
+    chunk.Set(1, -1, 1, BlockIds.Stone);
+    chunk.Set(1, VoxelMath.ChunkHeight, 1, BlockIds.Stone);
+
+    Assert.Equal(BlockIds.Air, chunk.Get(1, -1, 1));
+    Assert.Equal(BlockIds.Air, chunk.Get(1, VoxelMath.ChunkHeight, 1));
+    Assert.Equal(0, chunk.AllocatedSections);
   }
 }

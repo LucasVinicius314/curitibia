@@ -97,6 +97,20 @@ public partial class ItemUser : Node
     }
 
     hostReadyAtMsec = now + (ulong)(behavior.Cooldown * 900f); // a little slack for network jitter
-    behavior.HostUse(Context, primary);
+
+    if (behavior.HitDelay <= 0f)
+    {
+      behavior.HostUse(Context, primary);
+      return;
+    }
+
+    // The blow lands when the blade connects, not when the button went down.
+    GetTree().CreateTimer(behavior.HitDelay).Timeout += () =>
+    {
+      if (IsInstanceValid(this) && IsInsideTree() && !Player.Health.IsDead)
+      {
+        behavior.HostUse(Context, primary);
+      }
+    };
   }
 }

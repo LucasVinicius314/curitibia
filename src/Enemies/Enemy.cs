@@ -81,6 +81,8 @@ public partial class Enemy : CharacterBody3D, IDamageable
     All.Remove(this);
   }
 
+  HealthBar3D healthBar = null!;
+
   public override void _Ready()
   {
     gravity = (float)ProjectSettings.GetSetting("physics/3d/default_gravity", 9.8);
@@ -101,6 +103,9 @@ public partial class Enemy : CharacterBody3D, IDamageable
 
     Health.MaxHp = Tuning.MaxHp;
     Health.Hp = Tuning.MaxHp;
+
+    healthBar = new HealthBar3D { Position = new Vector3(0f, 2.2f, 0f) };
+    Visual.AddChild(healthBar);
 
     if (Multiplayer.IsServer())
     {
@@ -137,6 +142,8 @@ public partial class Enemy : CharacterBody3D, IDamageable
   public override void _Process(double delta)
   {
     var dt = (float)delta;
+
+    healthBar.Set(Health.Hp, Health.MaxHp);
 
     if (Multiplayer.IsServer())
     {

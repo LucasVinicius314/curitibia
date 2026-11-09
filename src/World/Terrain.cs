@@ -10,7 +10,7 @@ namespace Curitibia.World;
 /// <summary>
 /// The voxel world: owns chunk data, streams chunks in and out around the viewers (players), and applies block edits.
 /// Generation and meshing run on worker threads (pure functions); the main thread only uploads results, a few per frame.
-/// Chunks data is kept for ViewRadius + 1 so that the meshed ring always has all four neighbours.
+/// Chunks data is kept for the render distance (GameSettings.RenderDistance, a player setting) + 1 so that the meshed ring always has all four neighbours.
 /// </summary>
 public partial class Terrain : Node3D
 {
@@ -27,15 +27,29 @@ public partial class Terrain : Node3D
   /// </summary>
   public Action<Vector3I, byte>? EditRouter { get; set; }
 
+  /// <summary>
+  /// Raised on the main thread when a chunk's voxels are new or changed (it finished generating, or a block in it was
+  /// edited). The map uses it to redraw that chunk's tile.
+  /// </summary>
+  public event Action<Vector2I>? ChunkChanged;
+
+  /// <summary>Counts the worlds started (Begin / Clear), so a view of the world can tell when to throw its cache away.</summary>
+  public int WorldVersion { get; private set; }
+
   sealed class Entry
   {
     public Vector2I Coord;
-    public byte[]? Blocks;
+    public ChunkData? Blocks;
     public bool Generating;
     public bool Meshing;
     public bool Removed;
     public int Version;
     public int MeshedVersion = -1;
+
+    /// <summary>The layers the current mesh covers (a deep world is only drawn where somebody can see).</summary>
+    public int MeshedFloor = -1;
+    public int MeshedCeiling = -1;
+    public bool MeshedCollision;
     public Chunk? Node;
   }
 
@@ -43,13 +57,16 @@ public partial class Terrain : Node3D
   {
     public Entry Entry = null!;
     public int Version;
+    public int Floor;
+    public int Ceiling;
+    public bool Collision;
     public ChunkBuild Build = null!;
   }
 
   sealed class DataResult
   {
     public Entry Entry = null!;
-    public byte[] Blocks = null!;
+    public ChunkData Blocks = null!;
   }
 
   readonly Dictionary<Vector2I, Entry> entries = new();
@@ -62,6 +79,31 @@ public partial class Terrain : Node3D
   int inFlight;
   bool dirty = true;
   Vector2I[] lastViewerChunks = Array.Empty<Vector2I>();
+  int[] lastViewerSections = Array.Empty<int>();
+  bool[] lastViewerUnder = Array.Empty<bool>();
+
+  /// <summary>Chunks around a viewer on the surface whose mesh is extended down to include the viewer's own layer.</summary>
+  const int NearRadius = 3;
+
+  /// <summary>Sections (16 layers each) the underground slab moves in: it only changes when the viewer leaves the band.</summary>
+  const int SlabBand = 4;
+
+  /// <summary>
+  /// Chunks within this many chunks of a viewer have collision; the rest are only drawn. A collision shape is built on the main
+  /// thread and costs milliseconds (an underground chunk has tens of thousands of triangles), and nothing that collides with the
+  /// world gets that far from a player.
+  /// </summary>
+  const int CollisionRadius = 4;
+
+  /// <summary>Main-thread time per frame spent uploading finished meshes (at least one is always applied).</summary>
+  const double ApplyBudgetMs = 3.0;
+
+  /// <summary>Layers below and above the viewer's band that every chunk is drawn underground (the render distance applies as on the surface).</summary>
+  const int DeepBelow = 48;
+  const int DeepAbove = 64;
+
+  /// <summary>How far below its surface a chunk is drawn when nobody is near it (so cliffs and cave mouths show).</summary>
+  const int SurfaceReach = 24;
 
   readonly int maxInFlight = Math.Max(2, System.Environment.ProcessorCount - 2);
 
@@ -72,10 +114,18 @@ public partial class Terrain : Node3D
   public override void _EnterTree()
   {
     Instance = this;
+    GameSettings.Changed += OnSettingsChanged;
+  }
+
+  void OnSettingsChanged()
+  {
+    dirty = true; // a new render distance: plan again (load or unload the difference)
   }
 
   public override void _ExitTree()
   {
+    GameSettings.Changed -= OnSettingsChanged;
+
     if (Instance == this)
     {
       Instance = null;
@@ -94,6 +144,8 @@ public partial class Terrain : Node3D
 
   public void Clear()
   {
+    WorldVersion++;
+
     foreach (var entry in entries.Values)
     {
       entry.Removed = true;
@@ -138,7 +190,7 @@ public partial class Terrain : Node3D
       return BlockIds.Air;
     }
 
-    return VoxelMath.Get(entry.Blocks, lx, wy, lz);
+    return entry.Blocks.Get(lx, wy, lz);
   }
 
   public bool IsSolid(int wx, int wy, int wz)
@@ -146,18 +198,81 @@ public partial class Terrain : Node3D
     return GetBlock(wx, wy, wz) != BlockIds.Air;
   }
 
-  /// <summary>True when the chunk under a world position has collision, so a body can stand there.</summary>
+  /// <summary>The voxels of a loaded chunk (do not modify them), or false when that chunk is not loaded.</summary>
+  public bool TryGetChunk(Vector2I coord, out ChunkData? blocks)
+  {
+    if (entries.TryGetValue(coord, out var entry) && entry.Blocks != null)
+    {
+      blocks = entry.Blocks;
+
+      return true;
+    }
+
+    blocks = null;
+
+    return false;
+  }
+
+  /// <summary>
+  /// True when the chunk under a world position has collision that covers where a body is standing: its mesh is current and
+  /// its window of layers includes the body's feet (a stale slab or a mesh drawn for somewhere else does not count, so a body
+  /// waits for the right ground instead of falling through the wrong one).
+  /// </summary>
   public bool HasCollisionAt(Vector3 position)
   {
     VoxelMath.WorldToChunk(VoxelMath.WorldToVoxel(position.X), VoxelMath.WorldToVoxel(position.Z), out var cx, out var cz, out _, out _);
 
-    return entries.TryGetValue(new Vector2I(cx, cz), out var entry) && entry.Node != null && entry.Node.HasCollision;
+    if (!entries.TryGetValue(new Vector2I(cx, cz), out var entry) || entry.Node == null || !entry.Node.HasCollision)
+    {
+      return false;
+    }
+
+    var layer = VoxelMath.WorldToVoxel(position.Y);
+
+    return entry.MeshedCollision && entry.MeshedVersion == entry.Version && layer >= entry.MeshedFloor && layer < entry.MeshedCeiling;
   }
 
   /// <summary>Surface height in world units (top of the highest terrain or tree voxel of voxel column wx, wz) from the generator, ignoring edits.</summary>
   public float SurfaceHeightAt(int wx, int wz)
   {
-    return (generator?.SurfaceTop(wx, wz) ?? 40) * VoxelMath.BlockSize;
+    return (generator?.SurfaceTop(wx, wz) ?? VoxelMath.SeaLevel) * VoxelMath.BlockSize;
+  }
+
+  /// <summary>The biome under a world position (from the generator, so every peer agrees); null before the world starts.</summary>
+  public BiomeDef? BiomeAt(Vector3 position)
+  {
+    return generator == null
+      ? null
+      : Biomes.Get(generator.BiomeAt(VoxelMath.WorldToVoxel(position.X), VoxelMath.WorldToVoxel(position.Z)));
+  }
+
+  /// <summary>How far, in metres, a world position is below the ground (the terrain itself, not the trees) at its own column; negative above it.</summary>
+  public float DepthBelowGround(Vector3 position)
+  {
+    if (generator == null)
+    {
+      return 0f;
+    }
+
+    return generator.ColumnHeight(VoxelMath.WorldToVoxel(position.X), VoxelMath.WorldToVoxel(position.Z)) * VoxelMath.BlockSize - position.Y;
+  }
+
+  /// <summary>
+  /// The name of the underground layer at a world position ("The Caverns", "The Underworld"), or null when it is on or near
+  /// the ground. The ground is the terrain itself, not the trees on it, and a few metres below it counts as underground.
+  /// </summary>
+  public string? UndergroundAt(Vector3 position)
+  {
+    if (generator == null)
+    {
+      return null;
+    }
+
+    var vx = VoxelMath.WorldToVoxel(position.X);
+    var vz = VoxelMath.WorldToVoxel(position.Z);
+    var ground = generator.ColumnHeight(vx, vz) * VoxelMath.BlockSize;
+
+    return Underground.NameAt(VoxelMath.WorldToVoxel(position.Y), position.Y < ground - 4f);
   }
 
   /// <summary>True when everything wanted around the viewers is meshed and nothing is pending.</summary>
@@ -179,9 +294,9 @@ public partial class Terrain : Node3D
       {
         var c = ChunkOf(viewer.GlobalPosition);
 
-        for (int dz = -Settings.ViewRadius; dz <= Settings.ViewRadius; dz++)
+        for (int dz = -GameSettings.RenderDistance; dz <= GameSettings.RenderDistance; dz++)
         {
-          for (int dx = -Settings.ViewRadius; dx <= Settings.ViewRadius; dx++)
+          for (int dx = -GameSettings.RenderDistance; dx <= GameSettings.RenderDistance; dx++)
           {
             if (!entries.TryGetValue(c + new Vector2I(dx, dz), out var e) || e.Node == null || e.MeshedVersion != e.Version)
             {
@@ -224,17 +339,16 @@ public partial class Terrain : Node3D
 
     if (entries.TryGetValue(coord, out var entry) && entry.Blocks != null)
     {
-      if (VoxelMath.Get(entry.Blocks, lx, voxel.Y, lz) == id)
+      if (entry.Blocks.Get(lx, voxel.Y, lz) == id)
       {
         return false; // nothing changes: do not record or announce it
       }
 
-      // Building above the stored layers grows the array (a copy: a worker meshing the old one keeps its snapshot).
-      entry.Blocks = VoxelMath.EnsureHeight(entry.Blocks, voxel.Y);
-      entry.Blocks[index] = id;
+      entry.Blocks.Set(lx, voxel.Y, lz, id);
       entry.Version++;
       BumpBorderNeighbours(coord, lx, lz);
       dirty = true;
+      ChunkChanged?.Invoke(coord);
     }
 
     // Remember the edit for late joiners and for chunks that are not loaded (or get reloaded) later.
@@ -308,15 +422,29 @@ public partial class Terrain : Node3D
     DrainMeshResults();
 
     var chunks = new Vector2I[viewers.Count];
+    var sections = new int[viewers.Count];
+    var under = new bool[viewers.Count];
 
     for (int i = 0; i < chunks.Length; i++)
     {
       chunks[i] = ChunkOf(viewers[i].GlobalPosition);
+      var position = viewers[i].GlobalPosition;
+      var layer = VoxelMath.WorldToVoxel(position.Y);
+
+      // Only a viewer well below the ground under itself wants the slab around it; anyone on or above the ground sees the
+      // normal surface (compared with the ground at the viewer's own column, not with whatever chunk is being meshed).
+      var ground = generator.ColumnHeight(VoxelMath.WorldToVoxel(position.X), VoxelMath.WorldToVoxel(position.Z));
+
+      sections[i] = VoxelMath.FloorDiv(layer, ChunkData.SectionHeight);
+      under[i] = layer + ChunkData.SectionHeight < ground - SurfaceReach;
     }
 
-    if (!SameChunks(chunks, lastViewerChunks))
+    // Going up or down a section changes how deep the chunks around a viewer need to be drawn.
+    if (!SameChunks(chunks, lastViewerChunks) || !sections.AsSpan().SequenceEqual(lastViewerSections) || !under.AsSpan().SequenceEqual(lastViewerUnder))
     {
       lastViewerChunks = chunks;
+      lastViewerSections = sections;
+      lastViewerUnder = under;
       dirty = true;
     }
 
@@ -326,7 +454,7 @@ public partial class Terrain : Node3D
     }
 
     dirty = false;
-    Plan(chunks);
+    Plan(chunks, sections, under);
   }
 
   static bool SameChunks(Vector2I[] a, Vector2I[] b)
@@ -347,9 +475,79 @@ public partial class Terrain : Node3D
     return true;
   }
 
-  void Plan(Vector2I[] viewerChunks)
+  /// <summary>
+  /// The layers a chunk's mesh covers. A chunk nobody is near is drawn from a little under its surface up (what can be seen
+  /// from a distance). A chunk near a viewer is drawn as a slab around the viewer instead, so the ground you can see into (a
+  /// cave you are in, a hole you dug) is there and the rest of the underground, which nobody can see, is not.
+  /// </summary>
+  void WindowFor(Entry entry, Vector2I[] viewerChunks, int[] viewerSections, bool[] viewerUnder, out int floor, out int ceiling)
   {
-    var radius = Settings.ViewRadius;
+    var surfaceFloor = entry.Blocks!.SurfaceMin - SurfaceReach;
+    var wantsSurface = viewerChunks.Length == 0;
+    var low = int.MaxValue;
+    var high = 0;
+
+    for (int i = 0; i < viewerChunks.Length; i++)
+    {
+      var offset = entry.Coord - viewerChunks[i];
+
+      if (!viewerUnder[i])
+      {
+        // On or just under the ground: the normal surface mesh. Chunks right around the viewer reach down far enough to include
+        // the layer the viewer is on (a cave a few metres below the surface), so a body never stands outside its own chunk's mesh.
+        wantsSurface = true;
+
+        if (Math.Max(Math.Abs(offset.X), Math.Abs(offset.Y)) <= NearRadius)
+        {
+          low = Math.Min(low, viewerSections[i] * ChunkData.SectionHeight - ChunkData.SectionHeight);
+        }
+      }
+      else
+      {
+        // Underground: every chunk in render distance is drawn as the same slab around the viewer's height, so the distance you
+        // see is the one the player chose, as on the surface. The slab moves in bands of SlabBand sections, not with every step up
+        // or down, so the chunks are not all remeshed each time the viewer changes height a little.
+        var band = VoxelMath.FloorDiv(viewerSections[i], SlabBand) * SlabBand;
+
+        low = Math.Min(low, band * ChunkData.SectionHeight - DeepBelow);
+        high = Math.Max(high, (band + SlabBand) * ChunkData.SectionHeight + DeepAbove);
+      }
+    }
+
+    if (low == int.MaxValue)
+    {
+      wantsSurface = true;
+    }
+
+    var top = VoxelMath.ChunkHeight;
+
+    if (wantsSurface)
+    {
+      low = Math.Min(low, surfaceFloor);
+      high = top;
+    }
+    else if (high >= entry.Blocks!.SurfaceMin)
+    {
+      high = top; // the slab touches the ground: draw all of what is above it too
+    }
+
+    // The underworld is one open hall with magma lakes on its floor: a window that ended inside it would put a cut (and its dark
+    // cap) across the lakes or over your head, so near it the window always spans the whole hall, from the bottom of the world.
+    if (low < Underground.HellTop)
+    {
+      low = 0;
+
+      // ...and up past the hall's roof (through the rock blend band), so you never look up at the lid of the window.
+      high = Math.Max(high, Underground.HellTop + Underground.BlendBand + ChunkData.SectionHeight);
+    }
+
+    floor = Math.Max(0, VoxelMath.FloorDiv(low, ChunkData.SectionHeight) * ChunkData.SectionHeight);
+    ceiling = Math.Min(top, (high + ChunkData.SectionHeight - 1) / ChunkData.SectionHeight * ChunkData.SectionHeight);
+  }
+
+  void Plan(Vector2I[] viewerChunks, int[] viewerSections, bool[] viewerUnder)
+  {
+    var radius = GameSettings.RenderDistance;
 
     // Unload what is far from every viewer (with a margin so walking along a border does not thrash).
     var unloadRadius = radius + 1 + Settings.UnloadMargin;
@@ -396,7 +594,43 @@ public partial class Terrain : Node3D
 
     wanted.Sort((a, b) => a.dist.CompareTo(b.dist));
 
-    // Pass 1: data for the whole wanted square (radius + 1).
+    // First: meshes for the inner square (nearest first) whose four neighbours have data. A mesh that is stale or missing near the
+    // player has to be redone before more distant chunks are even generated, or the ground under you can stay out of date.
+    foreach (var (dist, coord) in wanted)
+    {
+      if (dist > radius)
+      {
+        continue;
+      }
+
+      if (inFlight >= maxInFlight)
+      {
+        dirty = true;
+        return;
+      }
+
+      if (!entries.TryGetValue(coord, out var entry) || entry.Blocks == null || entry.Meshing)
+      {
+        continue;
+      }
+
+      WindowFor(entry, viewerChunks, viewerSections, viewerUnder, out var floor, out var ceiling);
+
+      var collide = WantsCollision(entry.Coord, viewerChunks);
+
+      if (entry.MeshedVersion == entry.Version && entry.MeshedFloor == floor && entry.MeshedCeiling == ceiling && (entry.MeshedCollision || !collide))
+      {
+        continue;
+      }
+
+      if (!NeighboursHaveData(coord))
+      {
+        continue;
+      }
+
+      StartMesh(entry, floor, ceiling, collide);
+    }
+    // Then: data for the whole wanted square (radius + 1).
     foreach (var (_, coord) in wanted)
     {
       if (inFlight >= maxInFlight)
@@ -415,35 +649,6 @@ public partial class Terrain : Node3D
       {
         StartGenerate(entry);
       }
-    }
-
-    // Pass 2: meshes for the inner square once the four neighbours have data.
-    foreach (var (dist, coord) in wanted)
-    {
-      if (dist > radius)
-      {
-        continue;
-      }
-
-      if (inFlight >= maxInFlight)
-      {
-        dirty = true;
-        return;
-      }
-
-      var entry = entries[coord];
-
-      if (entry.Blocks == null || entry.Meshing || entry.MeshedVersion == entry.Version)
-      {
-        continue;
-      }
-
-      if (!NeighboursHaveData(coord))
-      {
-        continue;
-      }
-
-      StartMesh(entry);
     }
   }
 
@@ -484,11 +689,24 @@ public partial class Terrain : Node3D
     });
   }
 
-  void StartMesh(Entry entry)
+  static bool WantsCollision(Vector2I coord, Vector2I[] viewerChunks)
+  {
+    foreach (var v in viewerChunks)
+    {
+      if (Math.Max(Math.Abs(coord.X - v.X), Math.Abs(coord.Y - v.Y)) <= CollisionRadius)
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  void StartMesh(Entry entry, int floor, int ceiling, bool collide)
   {
     var version = entry.Version;
     var blocks = entry.Blocks!;
-    var neighbours = new byte[]?[]
+    var neighbours = new ChunkData?[]
     {
       entries[entry.Coord + Vector2I.Right].Blocks,
       entries[entry.Coord + Vector2I.Left].Blocks,
@@ -501,8 +719,8 @@ public partial class Terrain : Node3D
 
     Task.Run(() =>
     {
-      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset);
-      meshResults.Enqueue(new MeshResult { Entry = entry, Version = version, Build = ChunkBuild.From(data) });
+      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide);
+      meshResults.Enqueue(new MeshResult { Entry = entry, Version = version, Floor = floor, Ceiling = ceiling, Collision = collide, Build = ChunkBuild.From(data, collide) });
     });
   }
 
@@ -525,22 +743,27 @@ public partial class Terrain : Node3D
       {
         foreach (var (index, id) in chunkEdits)
         {
-          blocks = VoxelMath.EnsureHeight(blocks, index / VoxelMath.LayerSize);
-          blocks[index] = id;
+          blocks.Set(index % VoxelMath.ChunkSize, index / VoxelMath.LayerSize, index / VoxelMath.ChunkSize % VoxelMath.ChunkSize, id);
         }
       }
 
       result.Entry.Blocks = blocks;
       result.Entry.Version++;
       dirty = true;
+      ChunkChanged?.Invoke(result.Entry.Coord);
     }
   }
 
   void DrainMeshResults()
   {
     var applied = 0;
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
 
-    while (applied < Settings.MeshAppliesPerFrame && meshResults.TryDequeue(out var result))
+    // Uploading a mesh and building its collision happen on this thread and are the main cost of walking through new ground:
+    // take finished meshes until the frame's budget is spent (the cap is a safety net).
+    while (applied < Settings.MeshAppliesPerFrame * 4
+      && (applied == 0 || System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds < ApplyBudgetMs)
+      && meshResults.TryDequeue(out var result))
     {
       inFlight--;
       applied++;
@@ -562,6 +785,9 @@ public partial class Terrain : Node3D
 
       entry.Node.Apply(result.Build);
       entry.MeshedVersion = result.Version;
+      entry.MeshedFloor = result.Floor;
+      entry.MeshedCeiling = result.Ceiling;
+      entry.MeshedCollision = result.Collision;
       dirty = true;
     }
   }

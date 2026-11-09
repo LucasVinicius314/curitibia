@@ -10,6 +10,9 @@ public enum SwingStyle
 
   /// <summary>An overhead chop, down and forward.</summary>
   Chop,
+
+  /// <summary>A real one-handed cut along an oval around the shoulder, high left to low right, the blade leading (see SlashSwing).</summary>
+  Slash,
 }
 
 /// <summary>
@@ -29,6 +32,9 @@ public partial class ItemModel : Resource
 
   /// <summary>How big the use swing is (1 = a full sword chop).</summary>
   [Export] public float SwingAmount { get; set; } = 1f;
+
+  /// <summary>Grip to tip in metres, for items that swing as a blade (Slash).</summary>
+  public virtual float BladeLength => 0.9f;
 
   /// <summary>Orientation used for the icon render.</summary>
   [Export] public Vector3 IconRotationDegrees { get; set; }

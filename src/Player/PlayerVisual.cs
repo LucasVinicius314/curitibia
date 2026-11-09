@@ -33,6 +33,8 @@ public partial class PlayerVisual : Node3D
   Node3D rig = null!;
   Node3D chest = null!;
   Node3D arms = null!;
+  Node3D armR = null!;
+  Quaternion armRRest = Quaternion.Identity;
   Node3D legL = null!;
   Node3D legR = null!;
 
@@ -85,6 +87,28 @@ public partial class PlayerVisual : Node3D
   /// <summary>Where held items attach (the chest, so they lean and swing with the body). Valid after _Ready.</summary>
   public Node3D HeldItemAnchor => chest;
 
+  /// <summary>
+  /// Points the right arm at a spot in the chest's frame (the grip of a swinging weapon), blended from its resting pose by
+  /// <paramref name="weight"/>; 0 gives the arm back to the run animation's rest.
+  /// </summary>
+  public void AimRightArm(Vector3 chestPoint, float weight)
+  {
+    if (armR == null)
+    {
+      return;
+    }
+
+    var local = arms.Basis.Inverse() * chestPoint;
+
+    if (weight <= 0f || local.LengthSquared() < 1e-4f)
+    {
+      armR.Quaternion = armRRest;
+      return;
+    }
+
+    armR.Quaternion = armRRest.Slerp(new Quaternion(Vector3.Down, local.Normalized()), weight);
+  }
+
   /// <summary>Draws the body as the translucent Fresnel ghost (a dead player).</summary>
   public bool Ghost
   {
@@ -134,7 +158,8 @@ public partial class PlayerVisual : Node3D
     // Arms hang out to the sides (the Unity arm pivots are turned about 80 degrees), a hand at the end of each.
     arms = CapsulePart.Pivot(chest, "Arms", Vector3.Zero);
     var armL = CapsulePart.Pivot(arms, "ArmL", Vector3.Zero, null, new Vector3(0f, 0f, -79.6f));
-    var armR = CapsulePart.Pivot(arms, "ArmR", Vector3.Zero, null, new Vector3(0f, 0f, 79.6f));
+    armR = CapsulePart.Pivot(arms, "ArmR", Vector3.Zero, null, new Vector3(0f, 0f, 79.6f));
+    armRRest = armR.Quaternion;
     Add(armL, "HandL", GameMaterials.MatteYellow, new Vector3(0f, -0.6f, 0f), new Vector3(0.4f, 0.15f, 0.4f));
     Add(armR, "HandR", GameMaterials.MatteYellow, new Vector3(0f, -0.6f, 0f), new Vector3(0.4f, 0.15f, 0.4f));
 

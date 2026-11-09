@@ -35,10 +35,10 @@ public partial class BlockItemModel : ItemModel
     }
 
     // One block one layer up (the mesher never draws the bottom of the world), with empty neighbours so every face shows.
-    var blocks = new byte[2 * VoxelMath.LayerSize];
-    blocks[VoxelMath.Index(0, 1, 0)] = (byte)blockId;
-    var empty = new byte[0];
-    var data = ChunkMesher.Build(blocks, new byte[]?[] { empty, empty, empty, empty }, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset);
+    var blocks = new ChunkData();
+    blocks.Set(0, 1, 0, (byte)blockId);
+    var empty = new ChunkData();
+    var data = ChunkMesher.Build(blocks, new ChunkData?[] { empty, empty, empty, empty }, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset);
 
     var vertices = MemoryMarshal.Cast<float, Vector3>(data.Positions).ToArray();
 

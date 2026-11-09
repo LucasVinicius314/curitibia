@@ -19,7 +19,7 @@ IconRotationDegrees = Vector3(-30, 45, 0)
 [resource]
 script = ExtResource("1")
 NetId = 4
-DisplayName = "Wood"
+DisplayName = "Oak log"
 MaxStack = 64
 Infinite = true
 Behavior = SubResource("Resource_behavior")

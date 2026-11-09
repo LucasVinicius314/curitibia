@@ -1,10 +1,12 @@
+using System;
 using Godot;
 
 namespace Curitibia.Items;
 
 /// <summary>
-/// An item model in somebody's hand plus the use animation (a right-to-left sweep with the blade turning into the cut, or an
-/// overhead chop), then back to rest. Pure presentation, one per place an item is shown (the body, and the first-person view).
+/// An item model in somebody's hand plus the use animation: a real sword cut along an oval around the shoulder (see
+/// SlashSwing), a short sweep, or an overhead chop, then back to rest. Pure presentation, one per place an item is shown
+/// (the body, and the first-person view).
 /// </summary>
 public partial class HeldModel : Node3D
 {
@@ -17,6 +19,24 @@ public partial class HeldModel : Node3D
   SwingStyle style;
   Vector3 restPosition;
   bool restKnown;
+
+  SlashSwing[]? slashes;
+  SlashSwing? slash;
+  readonly SlashCombo combo = new();
+  SwingPose slashFrom;
+  SwingPose slashRest;
+
+  /// <summary>The shoulder the swing turns around, in this model's parent frame. Set before the model.</summary>
+  public Vector3 SwingCentre { get; set; } = new(0.16f, -0.34f, -0.18f);
+
+  /// <summary>Shoulder to hand in metres, for the slash.</summary>
+  public float ArmLength { get; set; } = 0.55f;
+
+  /// <summary>
+  /// Called every frame of a slash with the grip position (parent frame) and how much the arm should follow it (0 to 1), so a
+  /// body can reach its hand out to the sword.
+  /// </summary>
+  public Action<Vector3, float>? ArmAimer { get; set; }
 
   public void SetModel(ItemModel model)
   {
@@ -39,11 +59,39 @@ public partial class HeldModel : Node3D
     style = model.Swing;
     Rotation = new Vector3(rest, 0f, roll);
     AddChild(model.Build());
+
+    if (style == SwingStyle.Slash)
+    {
+      slashes = new[]
+      {
+        new SlashSwing(ToNumerics(SwingCentre), ArmLength, model.BladeLength, SlashArc.Forehand),
+        new SlashSwing(ToNumerics(SwingCentre), ArmLength, model.BladeLength, SlashArc.Backhand),
+      };
+      slash = slashes[0];
+      combo.Reset();
+      slashRest = new SwingPose(ToNumerics(restPosition), ToNumerics(Basis.FromEuler(new Vector3(rest, 0f, roll)).GetRotationQuaternion()));
+    }
+    else
+    {
+      slashes = null;
+      slash = null;
+    }
+
+    swing = SwingSeconds;
   }
 
   public void Play()
   {
     swing = 0f;
+
+    // Consecutive swings alternate between the two cuts, forehand first.
+    if (slashes != null)
+    {
+      slash = slashes[combo.Next(Time.GetTicksMsec() / 1000.0)];
+    }
+
+    // A swing that starts while the last one is still going carries on from wherever the item is.
+    slashFrom = new SwingPose(ToNumerics(Position), ToNumerics(Quaternion));
   }
 
   public override void _Process(double delta)
@@ -56,7 +104,11 @@ public partial class HeldModel : Node3D
     swing = Mathf.Min(SwingSeconds, swing + (float)delta);
     var t = swing / SwingSeconds;
 
-    if (style == SwingStyle.Chop)
+    if (slash != null)
+    {
+      Slash(slash);
+    }
+    else if (style == SwingStyle.Chop)
     {
       Chop(t);
     }
@@ -65,6 +117,23 @@ public partial class HeldModel : Node3D
       Sweep(t);
     }
   }
+
+  void Slash(SlashSwing path)
+  {
+    var pose = path.At(swing, slashFrom, slashRest);
+
+    Position = FromNumerics(pose.Position);
+    Quaternion = FromNumerics(pose.Rotation);
+    ArmAimer?.Invoke(Position, SlashSwing.ArmWeight(swing));
+  }
+
+  static System.Numerics.Vector3 ToNumerics(Vector3 v) => new(v.X, v.Y, v.Z);
+
+  static System.Numerics.Quaternion ToNumerics(Quaternion q) => new(q.X, q.Y, q.Z, q.W);
+
+  static Vector3 FromNumerics(System.Numerics.Vector3 v) => new(v.X, v.Y, v.Z);
+
+  static Quaternion FromNumerics(System.Numerics.Quaternion q) => new(q.X, q.Y, q.Z, q.W);
 
   /// <summary>
   /// A slash from the right across to the left, like a real sword cut: the blade is drawn back to the right and a little

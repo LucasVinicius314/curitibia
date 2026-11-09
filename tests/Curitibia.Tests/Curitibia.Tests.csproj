@@ -9,10 +9,16 @@
   <ItemGroup>
     <!-- Engine-free game code only (no Godot types), linked so the tests do not need the Godot SDK. -->
     <Compile Include="../../src/Core/VoxelMath.cs" Link="Linked/VoxelMath.cs" />
+    <Compile Include="../../src/Core/ChunkData.cs" Link="Linked/ChunkData.cs" />
     <Compile Include="../../src/Core/VoxelRaycast.cs" Link="Linked/VoxelRaycast.cs" />
     <Compile Include="../../src/Core/GradientNoise.cs" Link="Linked/GradientNoise.cs" />
     <Compile Include="../../src/Enemies/VoxelPathfinder.cs" Link="Linked/VoxelPathfinder.cs" />
     <Compile Include="../../src/World/Blocks.cs" Link="Linked/Blocks.cs" />
+    <Compile Include="../../src/Map/MapTileBuilder.cs" Link="Linked/MapTileBuilder.cs" />
+    <Compile Include="../../src/Items/SlashSwing.cs" Link="Linked/SlashSwing.cs" />
+    <Compile Include="../../src/World/Biomes.cs" Link="Linked/Biomes.cs" />
+    <Compile Include="../../src/World/Underground.cs" Link="Linked/Underground.cs" />
+    <Compile Include="../../src/World/BiomeMap.cs" Link="Linked/BiomeMap.cs" />
     <Compile Include="../../src/World/WorldGenerator.cs" Link="Linked/WorldGenerator.cs" />
     <Compile Include="../../src/World/ChunkMesher.cs" Link="Linked/ChunkMesher.cs" />
     <Compile Include="../../src/World/Features/TreeFeature.cs" Link="Linked/TreeFeature.cs" />

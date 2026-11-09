@@ -122,6 +122,16 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       Input.MouseMode = Input.MouseModeEnum.Captured;
       ThirdPerson = DevArgs.Has("third-person");
 
+      // --look=yawDeg,pitchDeg: start aimed somewhere (for scripted screenshots).
+      var aim = DevArgs.Get("look")?.Split(',');
+
+      if (aim is { Length: 2 } && float.TryParse(aim[0], System.Globalization.CultureInfo.InvariantCulture, out var aimYaw)
+        && float.TryParse(aim[1], System.Globalization.CultureInfo.InvariantCulture, out var aimPitch))
+      {
+        RotateY(Mathf.DegToRad(aimYaw));
+        Look(0f, Mathf.DegToRad(aimPitch));
+      }
+
       if (DevArgs.Has("noclip"))
       {
         SetNoclip(true);
@@ -354,7 +364,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     }
 
     var rate = onFloor ? Tuning.Responsiveness : Tuning.AirResponsiveness;
-    horizontal = horizontal.Lerp(wish * Tuning.Speed * (sprinting ? Tuning.SprintMultiplier : 1f), 1f - Mathf.Exp(-rate * dt));
+    horizontal = horizontal.Lerp(wish * Tuning.Speed * GameSettings.MoveSpeedMultiplier * (sprinting ? Tuning.SprintMultiplier : 1f), 1f - Mathf.Exp(-rate * dt));
 
     // Vertical: gravity, jump buffer and a little coyote time.
     coyote = onFloor ? CoyoteSeconds : coyote - dt;
@@ -411,7 +421,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       wish = wish.Normalized();
     }
 
-    var target = wish * Tuning.FlySpeed * (sprinting ? 3f : 1f);
+    var target = wish * Tuning.FlySpeed * GameSettings.MoveSpeedMultiplier * (sprinting ? 3f : 1f);
     Velocity = Velocity.Lerp(target, 1f - Mathf.Exp(-10f * dt));
     MoveAndSlide(); // the collision mask is empty, so this just moves
 
@@ -448,17 +458,21 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       return; // no headroom
     }
 
-    // Probe far enough ahead that the whole capsule is over the ledge, so the landing test meets its flat top and not
-    // just the rim (a rim contact would only lift us a little each tick).
-    var far = direction * (BodyRadius + 0.2f);
+    // Is it a wall or a step? Only the ledge right in front matters, so check a short way ahead from the raised position. (A
+    // full body-width probe ran into the next riser of a staircase, where every step is only 0.5 m deep, and called it a wall.)
+    var clear = direction * 0.25f;
     var raised = start;
     raised.Origin += lift;
 
-    if (TestMove(raised, far))
+    if (TestMove(raised, clear))
     {
       return; // still blocked up there: a wall, not a step
     }
 
+    // Then probe far enough ahead that the whole capsule is over the ledge, so the landing test meets its flat top and not
+    // just the rim (a rim contact would only lift us a little each tick). On a staircase this lands inside the next riser, which
+    // counts as no travel: the full step height, enough to clear the next step as well.
+    var far = direction * (BodyRadius + 0.2f);
     var ahead = raised;
     ahead.Origin += far;
 

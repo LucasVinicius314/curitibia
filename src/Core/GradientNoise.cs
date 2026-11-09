@@ -86,6 +86,57 @@ public sealed class GradientNoise
     return Lerp(x1, x2, v);
   }
 
+  /// <summary>
+  /// Seeded 3D gradient noise (improved Perlin), roughly in [-1, 1]. For caves. Same guarantees as the 2D version: plain C#,
+  /// deterministic, safe on any thread.
+  /// </summary>
+  public float Sample(float x, float y, float z)
+  {
+    var xi = (int)MathF.Floor(x);
+    var yi = (int)MathF.Floor(y);
+    var zi = (int)MathF.Floor(z);
+
+    var xf = x - xi;
+    var yf = y - yi;
+    var zf = z - zi;
+
+    var xm = xi & 255;
+    var ym = yi & 255;
+    var zm = zi & 255;
+
+    var u = Fade(xf);
+    var v = Fade(yf);
+    var w = Fade(zf);
+
+    var a = perm[xm] + ym;
+    var aa = perm[a] + zm;
+    var ab = perm[a + 1] + zm;
+    var b = perm[xm + 1] + ym;
+    var ba = perm[b] + zm;
+    var bb = perm[b + 1] + zm;
+
+    return Lerp(
+      Lerp(
+        Lerp(Grad(perm[aa], xf, yf, zf), Grad(perm[ba], xf - 1, yf, zf), u),
+        Lerp(Grad(perm[ab], xf, yf - 1, zf), Grad(perm[bb], xf - 1, yf - 1, zf), u),
+        v),
+      Lerp(
+        Lerp(Grad(perm[aa + 1], xf, yf, zf - 1), Grad(perm[ba + 1], xf - 1, yf, zf - 1), u),
+        Lerp(Grad(perm[ab + 1], xf, yf - 1, zf - 1), Grad(perm[bb + 1], xf - 1, yf - 1, zf - 1), u),
+        v),
+      w);
+  }
+
+  static float Grad(int hash, float x, float y, float z)
+  {
+    // 12 edge directions of a cube (Ken Perlin's improved noise)
+    var h = hash & 15;
+    var u = h < 8 ? x : y;
+    var v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+
+    return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+  }
+
   static float Lerp(float a, float b, float t)
   {
     return a + (b - a) * t;

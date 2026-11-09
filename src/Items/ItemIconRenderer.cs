@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using Curitibia.World;
 using Godot;
 
 namespace Curitibia.Items;
 
 /// <summary>
-/// Renders each item's model once into an icon texture (an offscreen viewport with a transparent background and an
+/// Renders each item's model, and a cube of every block, once into an icon texture (an offscreen viewport with a transparent background and an
 /// orthographic camera), so icons always match the models and a new item needs no art. The textures are cached for the whole
 /// run; this node only does the rendering and frees its viewport afterwards. Nothing here runs per frame.
 /// </summary>
@@ -14,6 +15,7 @@ public partial class ItemIconRenderer : Node
   const int IconPixels = 128;
 
   static readonly Dictionary<int, Texture2D> icons = new();
+  static readonly Dictionary<byte, Texture2D> blockIcons = new();
 
   /// <summary>Raised when new icons became available.</summary>
   public static event Action? IconsReady;
@@ -23,6 +25,12 @@ public partial class ItemIconRenderer : Node
     return icons.TryGetValue(itemId, out var icon) ? icon : null;
   }
 
+  /// <summary>The icon of a block (a cube with its textures), for every block id, whether or not an item places it.</summary>
+  public static Texture2D? IconForBlock(byte blockId)
+  {
+    return blockIcons.TryGetValue(blockId, out var icon) ? icon : null;
+  }
+
   public override async void _Ready()
   {
     if (DisplayServer.GetName() == "headless")
@@ -30,17 +38,27 @@ public partial class ItemIconRenderer : Node
       return;
     }
 
-    var missing = new List<ItemDef>();
+    var jobs = new List<(ItemModel model, Action<Texture2D> store)>();
 
     foreach (var def in ItemRegistry.All)
     {
       if (def.Model != null && !icons.ContainsKey(def.NetId))
       {
-        missing.Add(def);
+        var id = def.NetId;
+        jobs.Add((def.Model, texture => icons[id] = texture));
       }
     }
 
-    if (missing.Count == 0)
+    for (byte block = 1; block <= BlockIds.MaxId; block++)
+    {
+      if (!blockIcons.ContainsKey(block))
+      {
+        var id = block;
+        jobs.Add((new BlockItemModel { BlockId = id, IconRotationDegrees = new Vector3(-30f, 45f, 0f) }, texture => blockIcons[id] = texture));
+      }
+    }
+
+    if (jobs.Count == 0)
     {
       return;
     }
@@ -72,9 +90,8 @@ public partial class ItemIconRenderer : Node
     viewport.AddChild(light);
     viewport.AddChild(environment);
 
-    foreach (var def in missing)
+    foreach (var (model, store) in jobs)
     {
-      var model = def.Model!;
       var node = model.Build();
       node.RotationDegrees = model.IconRotationDegrees;
       viewport.AddChild(node);
@@ -88,7 +105,7 @@ public partial class ItemIconRenderer : Node
 
       if (image != null)
       {
-        icons[def.NetId] = ImageTexture.CreateFromImage(image);
+        store(ImageTexture.CreateFromImage(image));
       }
 
       viewport.RemoveChild(node);

@@ -5,9 +5,10 @@
 [resource]
 script = ExtResource("1")
 Frequency = 0.02
-Amplitude = 20.0
-BaseHeight = 50.0
-Octaves = 2
+ReliefScale = 1.0
+BiomeFrequency = 0.00022
+BaseHeight = 700.0
+Octaves = 3
 ViewRadius = 12
 UnloadMargin = 2
 MeshAppliesPerFrame = 3

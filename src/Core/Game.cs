@@ -24,6 +24,9 @@ public static class Actions
   public static readonly StringName ToggleView = "toggle_view";
   public static readonly StringName ToggleFly = "toggle_fly";
   public static readonly StringName FlyDown = "fly_down";
+  public static readonly StringName Map = "map";
+  public static readonly StringName MapZoomIn = "map_zoom_in";
+  public static readonly StringName MapZoomOut = "map_zoom_out";
 }
 
 /// <summary>
@@ -49,6 +52,9 @@ public partial class Game : Node
     AddKeys(Actions.ToggleView, Key.V);
     AddKeys(Actions.ToggleFly, Key.F);
     AddKeys(Actions.FlyDown, Key.Ctrl, Key.C);
+    AddKeys(Actions.Map, Key.M);
+    AddKeys(Actions.MapZoomIn, Key.Equal, Key.KpAdd);
+    AddKeys(Actions.MapZoomOut, Key.Minus, Key.KpSubtract);
 
     AddAxis(Actions.MoveForward, JoyAxis.LeftY, -1f);
     AddAxis(Actions.MoveBack, JoyAxis.LeftY, 1f);

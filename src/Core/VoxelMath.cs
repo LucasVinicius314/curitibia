@@ -6,8 +6,20 @@ namespace Curitibia.Core;
 public static class VoxelMath
 {
   public const int ChunkSize = 32;
-  /// <summary>Voxels per column: 256 half-metre blocks is 128 m of build height.</summary>
-  public const int ChunkHeight = 256;
+  /// <summary>
+  /// Voxels per column: 1152 half-metre blocks is 576 m. Layer 0 is the bottom of the underworld (Y -700), layer
+  /// <see cref="SeaLevel"/> is Y 0, and the rest is room for the mountains above it.
+  /// </summary>
+  public const int ChunkHeight = 1152;
+
+  /// <summary>The layer that is Y 0: the surface baseline (where water will sit). The underground is below it.</summary>
+  public const int SeaLevel = 700;
+
+  /// <summary>The Y a layer is called in the game (Y 0 at the baseline of the surface, negative underground).</summary>
+  public static int DisplayY(int layer)
+  {
+    return layer - SeaLevel;
+  }
 
   /// <summary>Edge length of one voxel in world units (metres).</summary>
   public const float BlockSize = 0.5f;
@@ -15,9 +27,6 @@ public static class VoxelMath
 
   /// <summary>Voxels in one horizontal layer of a chunk.</summary>
   public const int LayerSize = ChunkSize * ChunkSize;
-
-  /// <summary>Chunk arrays only hold the layers that can contain something, in steps of this many layers.</summary>
-  public const int LayerStep = 16;
 
   /// <summary>Floor division that rounds toward negative infinity (the classic voxel bug is using / on negatives).</summary>
   public static int FloorDiv(int a, int b)
@@ -53,39 +62,6 @@ public static class VoxelMath
   public static float VoxelCenter(int voxel)
   {
     return (voxel + 0.5f) * BlockSize;
-  }
-
-  /// <summary>
-  /// A voxel of a chunk array, air when it lies above the array. Chunk arrays are trimmed to the layers in use (a tall world
-  /// is mostly sky), so reading past the end is normal.
-  /// </summary>
-  public static byte Get(byte[] blocks, int x, int y, int z)
-  {
-    var index = Index(x, y, z);
-
-    return index < blocks.Length ? blocks[index] : (byte)0;
-  }
-
-  /// <summary>An array tall enough to hold layer <paramref name="y"/>: the same one when it already is, else a grown copy.</summary>
-  public static byte[] EnsureHeight(byte[] blocks, int y)
-  {
-    var needed = Math.Min(ChunkVolume, RoundUpLayers(y + 1) * LayerSize);
-
-    if (blocks.Length >= needed)
-    {
-      return blocks;
-    }
-
-    var grown = new byte[needed];
-    Buffer.BlockCopy(blocks, 0, grown, 0, blocks.Length);
-
-    return grown;
-  }
-
-  /// <summary>Rounds a layer count up to the array step.</summary>
-  public static int RoundUpLayers(int layers)
-  {
-    return (layers + LayerStep - 1) / LayerStep * LayerStep;
   }
 
   public static int Index(int x, int y, int z)

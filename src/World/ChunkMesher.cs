@@ -12,6 +12,13 @@ public sealed class MeshData
   public float[] Uvs = Array.Empty<float>();
   public int[] Indices = Array.Empty<int>();
 
+  /// <summary>
+  /// The solid faces for collision, merged into rectangles of coplanar faces regardless of block type: far fewer triangles than
+  /// the visible mesh (three floats per vertex, three vertices per triangle, clockwise like the visible faces). Empty when the
+  /// mesh was built without collision.
+  /// </summary>
+  public float[] CollisionTriangles = Array.Empty<float>();
+
   public int VertexCount => Positions.Length / 3;
   public int TriangleCount => Indices.Length / 3;
 }
@@ -59,38 +66,97 @@ public static class ChunkMesher
 
   static readonly (int a, int b)[] Corners = { (0, 0), (1, 0), (1, 1), (0, 1) };
 
-  /// <param name="blocks">The chunk's voxels (VoxelMath.Index layout).</param>
-  /// <param name="neighbours">Neighbour chunk voxels indexed by NeighbourPlusX/MinusX/PlusZ/MinusZ; null entries count as solid.</param>
+  /// <param name="blocks">The chunk's voxels.</param>
+  /// <param name="neighbours">Neighbour chunks indexed by NeighbourPlusX/MinusX/PlusZ/MinusZ; null entries count as solid.</param>
   /// <param name="tileByBlock">Atlas tile per block id (-1 = not drawn).</param>
   /// <param name="topTiles">Optional tile per block id for the top face (-1 or missing = the side tile).</param>
   /// <param name="bottomTiles">Same for the bottom face.</param>
   /// <param name="tileCount">Tiles in the atlas (laid out in one row).</param>
   /// <param name="uvInset">UV inset per tile edge (fraction of the whole atlas width) to avoid bleeding between tiles.</param>
-  public static MeshData Build(byte[] blocks, byte[]?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null)
+  /// <param name="floorLayer">Only layers from here up are meshed (a multiple of the section height); nothing is drawn across the cut. A deep world is only drawn where somebody can see.</param>
+  /// <param name="collision">Also build the merged collision rectangles (<see cref="MeshData.CollisionTriangles"/>).</param>
+  /// <param name="ceilingLayer">Only layers below this are meshed (a multiple of the section height, or the world height for no cut).</param>
+  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true)
   {
     var positions = new List<float>(4096);
     var normals = new List<float>(4096);
     var uvs = new List<float>(4096);
     var indices = new List<int>(4096);
 
-    const int size = VoxelMath.ChunkSize;
-    // Most of a tall column is air: only walk up to the highest layer that has anything in it.
-    var top = blocks.AsSpan().LastIndexOfAnyExcept(BlockIds.Air);
+    void AddFace(int x, int y, int z, int f, int faceTile)
+    {
+      var face = Faces[f];
+      var u0 = (float)faceTile / tileCount + uvInset;
+      var u1 = (float)(faceTile + 1) / tileCount - uvInset;
 
-    if (top < 0)
+      var baseVertex = positions.Count / 3;
+
+      foreach (var (a, b) in Corners)
+      {
+        positions.Add(x + face.Ox + a * face.Ux + b * face.Vx);
+        positions.Add(y + face.Oy + a * face.Uy + b * face.Vy);
+        positions.Add(z + face.Oz + a * face.Uz + b * face.Vz);
+
+        normals.Add(face.Nx);
+        normals.Add(face.Ny);
+        normals.Add(face.Nz);
+
+        var s = face.SFromB ? b : a;
+        var t = face.SFromB ? a : b;
+
+        if (face.FlipT)
+        {
+          t = 1 - t;
+        }
+
+        uvs.Add(u0 + s * (u1 - u0));
+        uvs.Add(t);
+      }
+
+      // clockwise triangles
+      indices.Add(baseVertex);
+      indices.Add(baseVertex + 2);
+      indices.Add(baseVertex + 1);
+      indices.Add(baseVertex);
+      indices.Add(baseVertex + 3);
+      indices.Add(baseVertex + 2);
+    }
+
+    var faceKeys = new List<long>[Faces.Length];
+
+    for (int i = 0; i < faceKeys.Length; i++)
+    {
+      faceKeys[i] = new List<long>();
+    }
+
+    const int size = VoxelMath.ChunkSize;
+    // Most of a tall world is open sky or rock all through: walk only the sections that can show a face.
+    var top = Math.Min(blocks.TopLayer(), ceilingLayer);
+
+    if (top <= floorLayer)
     {
       return new MeshData();
     }
 
-    var height = top / (size * size) + 1;
+    var firstSection = floorLayer / ChunkData.SectionHeight;
+    var lastSection = (top - 1) / ChunkData.SectionHeight;
 
-    for (int y = 0; y < height; y++)
+    for (int section = firstSection; section <= lastSection; section++)
     {
+      if (!MayShowFaces(blocks, neighbours, section, firstSection, lastSection, ceilingLayer >= VoxelMath.ChunkHeight))
+      {
+        continue;
+      }
+
+      var yEnd = (section + 1) * ChunkData.SectionHeight;
+
+      for (int y = section * ChunkData.SectionHeight; y < yEnd; y++)
+      {
       for (int z = 0; z < size; z++)
       {
         for (int x = 0; x < size; x++)
         {
-          var id = blocks[VoxelMath.Index(x, y, z)];
+          var id = blocks.Get(x, y, z);
 
           if (id == BlockIds.Air)
           {
@@ -108,7 +174,7 @@ public static class ChunkMesher
           {
             var face = Faces[f];
 
-            if (IsSolidAt(blocks, neighbours, x + face.Nx, y + face.Ny, z + face.Nz))
+            if (IsSolidAt(blocks, neighbours, floorLayer, ceilingLayer, x + face.Nx, y + face.Ny, z + face.Nz))
             {
               continue;
             }
@@ -124,40 +190,38 @@ public static class ChunkMesher
               faceTile = bottomTiles[id];
             }
 
-            var u0 = (float)faceTile / tileCount + uvInset;
-            var u1 = (float)(faceTile + 1) / tileCount - uvInset;
+            AddFace(x, y, z, f, faceTile);
 
-            var baseVertex = positions.Count / 3;
-
-            foreach (var (a, b) in Corners)
+            if (collision)
             {
-              positions.Add(x + face.Ox + a * face.Ux + b * face.Vx);
-              positions.Add(y + face.Oy + a * face.Uy + b * face.Vy);
-              positions.Add(z + face.Oz + a * face.Uz + b * face.Vz);
-
-              normals.Add(face.Nx);
-              normals.Add(face.Ny);
-              normals.Add(face.Nz);
-
-              var s = face.SFromB ? b : a;
-              var t = face.SFromB ? a : b;
-
-              if (face.FlipT)
-              {
-                t = 1 - t;
-              }
-
-              uvs.Add(u0 + s * (u1 - u0));
-              uvs.Add(t);
+              faceKeys[f].Add(FaceKey(f, x, y, z));
             }
+          }
+        }
+      }
+      }
+    }
 
-            // clockwise triangles
-            indices.Add(baseVertex);
-            indices.Add(baseVertex + 2);
-            indices.Add(baseVertex + 1);
-            indices.Add(baseVertex);
-            indices.Add(baseVertex + 3);
-            indices.Add(baseVertex + 2);
+    var collisionTriangles = collision ? MergeCollision(faceKeys) : Array.Empty<float>();
+
+    // Where the window cuts through open space (a cave that goes on beyond it), close it with a face of rock, so you never see
+    // through the cut into nothing.
+    if (floorLayer > 0 || ceilingLayer < VoxelMath.ChunkHeight)
+    {
+      var voidTile = tileCount - 1; // near black: a cut through open space reads as dark depth, not as a stone wall
+
+      for (int z = 0; z < size; z++)
+      {
+        for (int x = 0; x < size; x++)
+        {
+          if (floorLayer > 0 && floorLayer < top && blocks.Get(x, floorLayer, z) == BlockIds.Air)
+          {
+            AddFace(x, floorLayer - 1, z, 2, voidTile); // the top of the rock below the cut
+          }
+
+          if (ceilingLayer < VoxelMath.ChunkHeight && ceilingLayer > floorLayer && blocks.Get(x, ceilingLayer - 1, z) == BlockIds.Air)
+          {
+            AddFace(x, ceilingLayer, z, 3, voidTile); // the underside of the rock above the cut
           }
         }
       }
@@ -169,29 +233,220 @@ public static class ChunkMesher
       Normals = normals.ToArray(),
       Uvs = uvs.ToArray(),
       Indices = indices.ToArray(),
+      CollisionTriangles = collisionTriangles,
     };
   }
 
-  static bool IsSolidAt(byte[] blocks, byte[]?[] neighbours, int x, int y, int z)
-  {
-    const int size = VoxelMath.ChunkSize;
+  // Which axis (0 = x, 1 = y, 2 = z) each face's normal, u and v run along.
+  static readonly int[] NormalAxis = AxisOf(f => f.Nx != 0 ? 0 : f.Ny != 0 ? 1 : 2);
+  static readonly int[] UAxis = AxisOf(f => f.Ux != 0 ? 0 : f.Uy != 0 ? 1 : 2);
+  static readonly int[] VAxis = AxisOf(f => f.Vx != 0 ? 0 : f.Vy != 0 ? 1 : 2);
 
-    if (y < 0)
+  static int[] AxisOf(Func<Face, int> pick)
+  {
+    var axes = new int[Faces.Length];
+
+    for (int i = 0; i < axes.Length; i++)
     {
-      return true; // below the world: never draw bottom faces
+      axes[i] = pick(Faces[i]);
     }
 
-    if (y >= VoxelMath.ChunkHeight)
+    return axes;
+  }
+
+  static int Coordinate(int axis, int x, int y, int z)
+  {
+    return axis == 0 ? x : axis == 1 ? y : z;
+  }
+
+  /// <summary>Packs a face's (slice along its normal, v, u) so sorting groups the faces of a plane and orders them row by row.</summary>
+  static long FaceKey(int f, int x, int y, int z)
+  {
+    return ((long)Coordinate(NormalAxis[f], x, y, z) << 40) | ((long)Coordinate(VAxis[f], x, y, z) << 20) | (long)Coordinate(UAxis[f], x, y, z);
+  }
+
+  [ThreadStatic] static bool[]? grid;
+
+  /// <summary>
+  /// Greedy-merges the exposed faces of each plane into rectangles. Faces are merged whatever block they belong to, since
+  /// collision does not care about textures. Returns triangles with the same winding as the visible faces.
+  /// </summary>
+  static float[] MergeCollision(List<long>[] faceKeys)
+  {
+    const int rowWidth = VoxelMath.ChunkHeight;
+    var cells = grid ??= new bool[rowWidth * rowWidth];
+    var output = new List<float>(4096);
+
+    for (int f = 0; f < faceKeys.Length; f++)
+    {
+      var keys = faceKeys[f];
+
+      if (keys.Count == 0)
+      {
+        continue;
+      }
+
+      keys.Sort();
+      var start = 0;
+
+      while (start < keys.Count)
+      {
+        var slice = (int)(keys[start] >> 40);
+        var end = start;
+        int uMin = int.MaxValue, uMax = 0, vMin = int.MaxValue, vMax = 0;
+
+        while (end < keys.Count && (int)(keys[end] >> 40) == slice)
+        {
+          var u = (int)(keys[end] & 0xfffff);
+          var v = (int)((keys[end] >> 20) & 0xfffff);
+
+          cells[v * rowWidth + u] = true;
+          uMin = Math.Min(uMin, u);
+          uMax = Math.Max(uMax, u);
+          vMin = Math.Min(vMin, v);
+          vMax = Math.Max(vMax, v);
+          end++;
+        }
+
+        for (int v = vMin; v <= vMax; v++)
+        {
+          for (int u = uMin; u <= uMax; u++)
+          {
+            if (!cells[v * rowWidth + u])
+            {
+              continue;
+            }
+
+            var w = 1;
+
+            while (u + w <= uMax && cells[v * rowWidth + u + w])
+            {
+              w++;
+            }
+
+            var h = 1;
+
+            while (v + h <= vMax && RowIsSolid(cells, (v + h) * rowWidth + u, w))
+            {
+              h++;
+            }
+
+            for (int dv = 0; dv < h; dv++)
+            {
+              Array.Clear(cells, (v + dv) * rowWidth + u, w);
+            }
+
+            EmitRect(output, f, slice, u, v, w, h);
+          }
+        }
+
+        start = end;
+      }
+    }
+
+    return output.ToArray();
+  }
+
+  static bool RowIsSolid(bool[] cells, int from, int width)
+  {
+    for (int i = 0; i < width; i++)
+    {
+      if (!cells[from + i])
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  static void EmitRect(List<float> output, int f, int slice, int u, int v, int w, int h)
+  {
+    var face = Faces[f];
+    Span<float> origin = stackalloc float[3];
+
+    origin[NormalAxis[f]] = slice + (NormalAxis[f] == 0 ? face.Ox : NormalAxis[f] == 1 ? face.Oy : face.Oz);
+    origin[UAxis[f]] = u;
+    origin[VAxis[f]] = v;
+
+    Span<float> c = stackalloc float[12];
+
+    for (int corner = 0; corner < 4; corner++)
+    {
+      var (a, b) = Corners[corner];
+
+      for (int axis = 0; axis < 3; axis++)
+      {
+        c[corner * 3 + axis] = origin[axis] + (UAxis[f] == axis ? a * w : 0) + (VAxis[f] == axis ? b * h : 0);
+      }
+    }
+
+    // clockwise: (0, 2, 1) and (0, 3, 2), like the visible faces
+    foreach (var corner in new[] { 0, 2, 1, 0, 3, 2 })
+    {
+      output.Add(c[corner * 3]);
+      output.Add(c[corner * 3 + 1]);
+      output.Add(c[corner * 3 + 2]);
+    }
+  }
+
+  /// <summary>
+  /// A section of rock all through shows a face only where something next to it is open: the section above or below, or the
+  /// same section of a neighbouring chunk. Open sky shows nothing. A section with its own array has to be walked.
+  /// </summary>
+  static bool MayShowFaces(ChunkData blocks, ChunkData?[] neighbours, int section, int firstSection, int lastSection, bool openAbove)
+  {
+    if (blocks.IsEmptySection(section))
     {
       return false;
     }
 
-    if (x >= 0 && x < size && z >= 0 && z < size)
+    if (!blocks.IsSolidSection(section))
     {
-      return VoxelMath.Get(blocks, x, y, z) != BlockIds.Air;
+      return true;
     }
 
-    byte[]? other;
+    if (section + 1 < ChunkData.SectionCount && (section < lastSection || openAbove) && !blocks.IsSolidSection(section + 1))
+    {
+      return true;
+    }
+
+    if (section > firstSection && !blocks.IsSolidSection(section - 1))
+    {
+      return true;
+    }
+
+    foreach (var other in neighbours)
+    {
+      if (other != null && !other.IsSolidSection(section))
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  static bool IsSolidAt(ChunkData blocks, ChunkData?[] neighbours, int floorLayer, int ceilingLayer, int x, int y, int z)
+  {
+    const int size = VoxelMath.ChunkSize;
+
+    if (y < floorLayer)
+    {
+      return true; // below the cut (or the bottom of the world): never draw faces there
+    }
+
+    if (y >= ceilingLayer)
+    {
+      return ceilingLayer < VoxelMath.ChunkHeight; // a cut in the middle of the rock draws nothing; the real sky is open
+    }
+
+    if (x >= 0 && x < size && z >= 0 && z < size)
+    {
+      return blocks.Get(x, y, z) != BlockIds.Air;
+    }
+
+    ChunkData? other;
 
     if (x < 0)
     {
@@ -219,6 +474,6 @@ public static class ChunkMesher
       return true;
     }
 
-    return VoxelMath.Get(other, x, y, z) != BlockIds.Air;
+    return other.Get(x, y, z) != BlockIds.Air;
   }
 }

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Curitibia.Core;
 using Curitibia.Items;
+using Curitibia.Map;
 using Curitibia.Net;
 using Curitibia.Player;
 using Curitibia.World;
@@ -41,6 +42,13 @@ public partial class Hud : CanvasLayer
   PanelContainer toastPanel = null!;
   Label toastLabel = null!;
   Tween? toastTween;
+  RegionBanner regionBanner = null!;
+  LookAtPanel lookPanel = null!;
+  MinimapPanel minimap = null!;
+  WorldMap worldMap = null!;
+  string? currentRegion;
+  string? pendingRegion;
+  int pendingTicks;
   PanelContainer rosterPanel = null!;
   VBoxContainer rosterRows = null!;
   Control connecting = null!;
@@ -64,6 +72,9 @@ public partial class Hud : CanvasLayer
   {
     session = NetSession.Instance;
 
+    InfoLabel.AddThemeFontSizeOverride("font_size", 12);
+    RenderingServer.ViewportSetMeasureRenderTime(GetViewport().GetViewportRid(), true);
+
     root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore, Theme = Ui.Theme };
     root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
     AddChild(root);
@@ -79,6 +90,21 @@ public partial class Hud : CanvasLayer
 
     BuildHealthBar();
     BuildToast();
+
+    regionBanner = new RegionBanner();
+    root.AddChild(regionBanner);
+
+    lookPanel = new LookAtPanel();
+    root.AddChild(lookPanel);
+
+    AddChild(new MapCache());
+
+    minimap = new MinimapPanel();
+    root.AddChild(minimap);
+
+    worldMap = new WorldMap();
+    root.AddChild(worldMap);
+
     BuildRoster();
     BuildConnecting();
     BuildPause();
@@ -100,6 +126,9 @@ public partial class Hud : CanvasLayer
   public void Bind(PlayerController localPlayer)
   {
     player = localPlayer;
+    lookPanel.Bind(localPlayer);
+    minimap.Bind(localPlayer);
+    worldMap.Bind(localPlayer);
     localPlayer.Inventory.Changed += OnInventoryChanged;
     hotbar.Bind(localPlayer.Inventory);
     OnInventoryChanged();
@@ -183,8 +212,8 @@ public partial class Hud : CanvasLayer
     toastPanel = new PanelContainer { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
     toastPanel.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
     toastPanel.GrowHorizontal = Control.GrowDirection.Both;
-    toastPanel.Position = new Vector2(0f, 14f);
-    toastPanel.OffsetTop = 14f;
+    toastPanel.Position = new Vector2(0f, 70f);
+    toastPanel.OffsetTop = 70f;
 
     toastLabel = Ui.Label("", null, HorizontalAlignment.Center);
     toastPanel.AddChild(toastLabel);
@@ -196,7 +225,7 @@ public partial class Hud : CanvasLayer
     rosterPanel = new PanelContainer { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
     rosterPanel.SetAnchorsPreset(Control.LayoutPreset.TopRight);
     rosterPanel.GrowHorizontal = Control.GrowDirection.Begin;
-    rosterPanel.OffsetTop = 48f;
+    rosterPanel.OffsetTop = 244f; // below the minimap
     rosterPanel.OffsetRight = -16f;
     rosterPanel.CustomMinimumSize = new Vector2(280f, 0f);
 
@@ -429,7 +458,7 @@ public partial class Hud : CanvasLayer
     var hasPlayer = player != null && IsInstanceValid(player);
     BannerLabel.Visible = hasPlayer && player!.Health.IsDead;
 
-    var paused = hasPlayer && Input.MouseMode != Input.MouseModeEnum.Captured;
+    var paused = hasPlayer && Input.MouseMode != Input.MouseModeEnum.Captured && !worldMap.IsOpen;
     pause.Visible = paused;
 
     if (paused && !pauseShown)
@@ -460,8 +489,7 @@ public partial class Hud : CanvasLayer
     textTimer = 0;
 
     var chunks = Terrain.Instance?.LoadedChunkCount ?? 0;
-    InfoLabel.Text = $"FPS {Engine.GetFramesPerSecond()}   UPS {physicsPerSecond}   chunks {chunks}{PingText()}{ModeText()}";
-
+    InfoLabel.Text = $"FPS {Engine.GetFramesPerSecond()}  UPS {physicsPerSecond}  chunks {chunks}{PingText()}{ModeText()}\n{PerformanceText()}\n{UpdateRegion(hasPlayer)}";
 
     var code = session.RoomCode;
     var idle = session.IsOnline ? "Online" : "Solo";
@@ -469,6 +497,75 @@ public partial class Hud : CanvasLayer
 
     UpdateRows(rosterRowsByPeer);
     UpdateRows(pauseRowsByPeer);
+  }
+
+  /// <summary>
+  /// CPU = game process time plus the CPU time spent recording the frame's render commands; GPU = measured render time of the
+  /// main viewport (reads 0 where the driver gives no timestamps). RAM = this process's working set; VRAM = what Godot
+  /// has allocated on the GPU (textures, buffers, meshes).
+  /// </summary>
+  string PerformanceText()
+  {
+    var rid = GetViewport().GetViewportRid();
+    var cpu = Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0 + RenderingServer.ViewportGetMeasuredRenderTimeCpu(rid);
+    var gpu = RenderingServer.ViewportGetMeasuredRenderTimeGpu(rid);
+    var ram = System.Environment.WorkingSet / (1024.0 * 1024.0);
+    var vram = Performance.GetMonitor(Performance.Monitor.RenderVideoMemUsed) / (1024.0 * 1024.0);
+
+    return $"cpu {cpu:F1} ms  gpu {gpu:F1} ms  ram {ram:F0} MB  vram {vram:F0} MB";
+  }
+
+  /// <summary>
+  /// Tracks which biome the player stands in and announces a new one with the region banner. A change only counts after
+  /// the player has stayed in it for about three quarters of a second, so walking along a border does not flicker.
+  /// Returns the text for the info label.
+  /// </summary>
+  string UpdateRegion(bool hasPlayer)
+  {
+    string? region = null;
+    var color = Colors.White;
+
+    if (hasPlayer && Terrain.Instance != null)
+    {
+      var layer = Terrain.Instance.UndergroundAt(player!.GlobalPosition);
+
+      if (layer != null)
+      {
+        region = layer;
+        color = layer == Underground.UnderworldName ? new Color(1f, 0.5f, 0.25f) : new Color(0.62f, 0.74f, 0.95f);
+      }
+      else if (Terrain.Instance.BiomeAt(player.GlobalPosition) is { } biome)
+      {
+        region = biome.Name;
+        color = RegionBanner.ColorOf(biome.Id);
+      }
+    }
+
+    if (region == null)
+    {
+      return currentRegion ?? "";
+    }
+
+    if (region == currentRegion)
+    {
+      pendingRegion = null;
+      pendingTicks = 0;
+    }
+    else
+    {
+      pendingTicks = region == pendingRegion ? pendingTicks + 1 : 1;
+      pendingRegion = region;
+
+      if (pendingTicks >= 3)
+      {
+        currentRegion = region;
+        pendingRegion = null;
+        pendingTicks = 0;
+        regionBanner.Announce(region, color);
+      }
+    }
+
+    return currentRegion ?? region;
   }
 
   string PingText()

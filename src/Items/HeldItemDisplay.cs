@@ -21,12 +21,19 @@ public partial class HeldItemDisplay : Node
 
   public override void _Ready()
   {
-    body = new HeldModel { Position = new Vector3(0.42f, -0.12f, -0.12f) };
+    // The body swings around its chest; the hand is drawn out to the sword by pointing the right arm at it.
+    body = new HeldModel
+    {
+      Position = new Vector3(0.42f, -0.12f, -0.12f),
+      SwingCentre = new Vector3(0f, 0.02f, 0f),
+      ArmLength = 0.6f,
+      ArmAimer = (point, weight) => Player.Visual.AimRightArm(point, weight),
+    };
     Player.Visual.HeldItemAnchor.AddChild(body);
 
     if (Player.IsLocal)
     {
-      view = new HeldModel { Position = new Vector3(0.3f, -0.28f, -0.42f) };
+      view = new HeldModel { Position = new Vector3(0.3f, -0.28f, -0.42f), SwingCentre = new Vector3(0.16f, -0.34f, -0.18f), ArmLength = 0.5f };
       Camera.AddChild(view);
     }
 

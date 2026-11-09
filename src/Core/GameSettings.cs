@@ -20,6 +20,20 @@ public static class GameSettings
   public const float MinMouseSensitivity = 0.25f;
   public const float MaxMouseSensitivity = 3f;
 
+  public const float MinMoveSpeed = 0.25f;
+  public const float MaxMoveSpeed = 10f;
+
+  /// <summary>
+  /// Debug: multiplier on how fast the player walks, sprints and flies (1 = as tuned). Not saved: it is back to 1 every time
+  /// the game starts.
+  /// </summary>
+  public static float MoveSpeedMultiplier { get; set; } = 1f;
+
+  public const int MinRenderDistance = 4;
+  public const int MaxRenderDistance = 16;
+  public const int DefaultRenderDistance = 12;
+
+  static int? renderDistance;
   static float? fieldOfView;
   static float? mouseSensitivity;
 
@@ -91,6 +105,41 @@ public static class GameSettings
       var config = new ConfigFile();
       config.Load(Path);
       config.SetValue("input", "sensitivity", (double)clamped);
+      config.Save(Path);
+
+      Changed?.Invoke();
+    }
+  }
+
+  /// <summary>Chunks (16 m each) kept meshed around the player in every direction. The cost grows with its square.</summary>
+  public static int RenderDistance
+  {
+    get
+    {
+      if (renderDistance == null)
+      {
+        var config = new ConfigFile();
+        var loaded = config.Load(Path) == Error.Ok ? (int)config.GetValue("view", "render_distance", DefaultRenderDistance) : DefaultRenderDistance;
+
+        renderDistance = Math.Clamp(loaded, MinRenderDistance, MaxRenderDistance);
+      }
+
+      return renderDistance.Value;
+    }
+    set
+    {
+      var clamped = Math.Clamp(value, MinRenderDistance, MaxRenderDistance);
+
+      if (clamped == RenderDistance)
+      {
+        return;
+      }
+
+      renderDistance = clamped;
+
+      var config = new ConfigFile();
+      config.Load(Path);
+      config.SetValue("view", "render_distance", clamped);
       config.Save(Path);
 
       Changed?.Invoke();

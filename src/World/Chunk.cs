@@ -13,9 +13,12 @@ public sealed class ChunkBuild
   public int[] Indices = System.Array.Empty<int>();
   public Vector3[] CollisionFaces = System.Array.Empty<Vector3>();
 
+  /// <summary>True when this build was made with collision (chunks far from every player are only drawn).</summary>
+  public bool WithCollision;
+
   public bool IsEmpty => Indices.Length == 0;
 
-  public static ChunkBuild From(MeshData data)
+  public static ChunkBuild From(MeshData data, bool withCollision = true)
   {
     var build = new ChunkBuild
     {
@@ -31,11 +34,19 @@ public sealed class ChunkBuild
       build.Vertices[i] *= VoxelMath.BlockSize;
     }
 
-    var faces = new Vector3[data.Indices.Length];
+    build.WithCollision = withCollision;
+
+    if (!withCollision)
+    {
+      return build;
+    }
+
+    var triangles = data.CollisionTriangles;
+    var faces = new Vector3[triangles.Length / 3];
 
     for (int i = 0; i < faces.Length; i++)
     {
-      faces[i] = build.Vertices[data.Indices[i]];
+      faces[i] = new Vector3(triangles[i * 3], triangles[i * 3 + 1], triangles[i * 3 + 2]) * VoxelMath.BlockSize;
     }
 
     build.CollisionFaces = faces;
@@ -83,7 +94,7 @@ public partial class Chunk : Node3D
     {
       meshInstance.Mesh = null;
       shape.Shape = null;
-      HasCollision = true;
+      HasCollision = build.WithCollision;
       oldMesh?.Dispose();
       oldShape?.Dispose();
       return;
@@ -102,7 +113,7 @@ public partial class Chunk : Node3D
 
     var collider = new ConcavePolygonShape3D { Data = build.CollisionFaces };
     shape.Shape = collider;
-    HasCollision = true;
+    HasCollision = build.WithCollision;
 
     // Free the replaced native objects now instead of waiting for the .NET GC.
     oldMesh?.Dispose();

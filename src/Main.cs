@@ -38,6 +38,8 @@ public partial class Main : Node3D
     session = NetSession.Instance;
     screenshotPath = DevArgs.Get("screenshot");
 
+    AddChild(new CaveLight { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
+
     var request = session.Pending ?? new StartRequest(SessionKind.Solo);
     session.Pending = null;
 
@@ -172,6 +174,7 @@ public partial class Main : Node3D
     }
   }
 
+
   void SpawnSpectator(Vector3 position, float yaw, float pitch)
   {
     var camera = new Camera3D { Fov = 80f };
@@ -214,6 +217,7 @@ public partial class Main : Node3D
 
   public override void _Process(double delta)
   {
+
     if (screenshotPath == null || !WorldTerrain.IsSettled)
     {
       return;

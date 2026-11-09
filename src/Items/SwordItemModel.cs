@@ -11,6 +11,9 @@ public partial class SwordItemModel : ItemModel
   static readonly BoxMesh guard = new() { Size = new Vector3(0.2f, 0.035f, 0.04f) };
   static readonly BoxMesh grip = new() { Size = new Vector3(0.04f, 0.04f, 0.16f) };
 
+  /// <summary>Grip to tip: the guard, the blade and the half-length of the grip behind.</summary>
+  public override float BladeLength => 0.92f;
+
   public override Node3D Build()
   {
     var root = new Node3D();
