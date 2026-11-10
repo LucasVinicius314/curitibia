@@ -58,7 +58,15 @@ public static class MapTileBuilder
   /// <summary>Layers up to and including the highest solid block of a column, or 0 for an empty column (or no chunk).</summary>
   public static int TopHeight(ChunkData? blocks, int lx, int lz)
   {
-    return blocks == null ? 0 : blocks.TopLayer(lx, lz);
+    if (blocks == null)
+    {
+      return 0;
+    }
+
+    var top = blocks.TopLayer(lx, lz);
+
+    // Short grass on top is not ground: the column reads as the grass under it.
+    return top > 0 && BlockIds.IsPlant(blocks.Get(lx, top - 1, lz)) ? top - 1 : top;
   }
 
   /// <summary>

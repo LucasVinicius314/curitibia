@@ -195,6 +195,12 @@ public partial class Terrain : Node3D
 
   public bool IsSolid(int wx, int wy, int wz)
   {
+    return BlockIds.IsSolid(GetBlock(wx, wy, wz));
+  }
+
+  /// <summary>Whether the block can be aimed at and broken: every block but air, plants included (they are not solid).</summary>
+  public bool IsTargetable(int wx, int wy, int wz)
+  {
     return GetBlock(wx, wy, wz) != BlockIds.Air;
   }
 
@@ -719,7 +725,7 @@ public partial class Terrain : Node3D
 
     Task.Run(() =>
     {
-      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide);
+      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide, chunkX: entry.Coord.X, chunkZ: entry.Coord.Y);
       meshResults.Enqueue(new MeshResult { Entry = entry, Version = version, Floor = floor, Ceiling = ceiling, Collision = collide, Build = ChunkBuild.From(data, collide) });
     });
   }

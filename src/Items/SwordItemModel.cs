@@ -3,7 +3,7 @@ using Godot;
 
 namespace Curitibia.Items;
 
-/// <summary>A sword of three boxes (blade, guard, grip). The grip is at the origin and the blade points along -Z.</summary>
+/// <summary>A copper sword of three boxes (blade, guard, wooden grip). The grip is at the origin and the blade points along -Z.</summary>
 [GlobalClass]
 public partial class SwordItemModel : ItemModel
 {
@@ -19,9 +19,9 @@ public partial class SwordItemModel : ItemModel
     var root = new Node3D();
 
     // Grip from +0.08 to -0.08, the guard right in front of it, then the blade, all touching.
-    Add(root, grip, GameMaterials.MatteYellow, new Vector3(0f, 0f, 0f));
-    Add(root, guard, GameMaterials.MatteBlack, new Vector3(0f, 0f, -0.10f));
-    Add(root, blade, GameMaterials.Metal, new Vector3(0f, 0f, -0.52f));
+    Add(root, grip, GameMaterials.WoodHandle, new Vector3(0f, 0f, 0f));
+    Add(root, guard, GameMaterials.Copper, new Vector3(0f, 0f, -0.10f));
+    Add(root, blade, GameMaterials.Copper, new Vector3(0f, 0f, -0.52f));
 
     return root;
   }

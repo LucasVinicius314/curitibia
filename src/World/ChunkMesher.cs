@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Curitibia.Core;
 
@@ -76,7 +76,7 @@ public static class ChunkMesher
   /// <param name="floorLayer">Only layers from here up are meshed (a multiple of the section height); nothing is drawn across the cut. A deep world is only drawn where somebody can see.</param>
   /// <param name="collision">Also build the merged collision rectangles (<see cref="MeshData.CollisionTriangles"/>).</param>
   /// <param name="ceilingLayer">Only layers below this are meshed (a multiple of the section height, or the world height for no cut).</param>
-  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true)
+  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true, int chunkX = 0, int chunkZ = 0)
   {
     var positions = new List<float>(4096);
     var normals = new List<float>(4096);
@@ -120,6 +120,52 @@ public static class ChunkMesher
       indices.Add(baseVertex);
       indices.Add(baseVertex + 3);
       indices.Add(baseVertex + 2);
+    }
+
+    void AddTuft(int x, int y, int z, int wx, int wz)
+    {
+      var h = TuftHash(wx, wz);
+      var cx = x + 0.2f + (h & 0xff) / 255f * 0.6f;
+      var cz = z + 0.2f + ((h >> 8) & 0xff) / 255f * 0.6f;
+      var height = 0.55f + ((h >> 16) & 0xff) / 255f * 0.4f;
+      var u0 = (float)BlockIds.TuftTile / tileCount + uvInset;
+      var u1 = (float)(BlockIds.TuftTile + 1) / tileCount - uvInset;
+
+      // Two crossed vertical quads (the diagonals of the voxel), each drawn from both sides; the normal points up so they are
+      // lit like the ground they stand on.
+      for (int plane = 0; plane < 2; plane++)
+      {
+        var dx = 0.5f;
+        var dz = plane == 0 ? 0.5f : -0.5f;
+
+        for (int side = 0; side < 2; side++)
+        {
+          var baseVertex = positions.Count / 3;
+          var ax = cx - dx; var az = cz - dz;
+          var bx = cx + dx; var bz = cz + dz;
+
+          if (side == 1)
+          {
+            (ax, bx) = (bx, ax);
+            (az, bz) = (bz, az);
+          }
+
+          void Vertex(float vx, float vy, float vz, float s, float t)
+          {
+            positions.Add(vx); positions.Add(vy); positions.Add(vz);
+            normals.Add(0f); normals.Add(1f); normals.Add(0f);
+            uvs.Add(u0 + s * (u1 - u0)); uvs.Add(t);
+          }
+
+          Vertex(ax, y, az, 0f, 1f);
+          Vertex(bx, y, bz, 1f, 1f);
+          Vertex(bx, y + height, bz, 1f, 0f);
+          Vertex(ax, y + height, az, 0f, 0f);
+
+          indices.Add(baseVertex); indices.Add(baseVertex + 2); indices.Add(baseVertex + 1);
+          indices.Add(baseVertex); indices.Add(baseVertex + 3); indices.Add(baseVertex + 2);
+        }
+      }
     }
 
     var faceKeys = new List<long>[Faces.Length];
@@ -167,6 +213,12 @@ public static class ChunkMesher
 
           if (tile < 0)
           {
+            continue;
+          }
+
+          if (BlockIds.IsPlant(id))
+          {
+            AddTuft(x, y, z, chunkX * size + x, chunkZ * size + z);
             continue;
           }
 
@@ -252,6 +304,15 @@ public static class ChunkMesher
     }
 
     return axes;
+  }
+
+  static uint TuftHash(int x, int z)
+  {
+    var h = (uint)x * 73856093u ^ (uint)z * 19349663u ^ 0x9e3779b9u;
+
+    h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12; h *= 0x297a2d39u; h ^= h >> 15;
+
+    return h;
   }
 
   static int Coordinate(int axis, int x, int y, int z)
@@ -443,7 +504,7 @@ public static class ChunkMesher
 
     if (x >= 0 && x < size && z >= 0 && z < size)
     {
-      return blocks.Get(x, y, z) != BlockIds.Air;
+      return BlockIds.IsSolid(blocks.Get(x, y, z));
     }
 
     ChunkData? other;
@@ -474,6 +535,6 @@ public static class ChunkMesher
       return true;
     }
 
-    return other.Get(x, y, z) != BlockIds.Air;
+    return BlockIds.IsSolid(other.Get(x, y, z));
   }
 }

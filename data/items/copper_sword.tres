@@ -24,7 +24,7 @@ IconRotationDegrees = Vector3(45, -90, 0)
 [resource]
 script = ExtResource("1")
 NetId = 1
-DisplayName = "Sword"
+DisplayName = "Copper Sword"
 MaxStack = 1
 Infinite = true
 Behavior = SubResource("Resource_behavior")

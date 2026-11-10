@@ -210,7 +210,8 @@ public partial class PlayerController : CharacterBody3D, IDamageable
 
     if (Input.MouseMode != Input.MouseModeEnum.Captured)
     {
-      if (@event is InputEventMouseButton { Pressed: true })
+      // The wheel is a "button" too: scrolling a menu must not capture the mouse and close it.
+      if (@event is InputEventMouseButton { Pressed: true, ButtonIndex: not (MouseButton.WheelUp or MouseButton.WheelDown or MouseButton.WheelLeft or MouseButton.WheelRight) })
       {
         Input.MouseMode = Input.MouseModeEnum.Captured;
       }
@@ -319,10 +320,13 @@ public partial class PlayerController : CharacterBody3D, IDamageable
   {
     var dt = (float)delta;
 
-    // Wait (frozen) until the ground under us exists, so we never fall through a chunk that is still being built.
+    // Wait (frozen) until the ground under us exists, so we never fall through a chunk that is still being built. Not while
+    // flying, and not outside the world's height (no chunk has ground there, so waiting would hold us forever instead of
+    // letting us fall to the kill height or fly back).
     var terrain = Terrain.Instance;
+    var outsideWorld = !VoxelMath.InWorldHeight(VoxelMath.WorldToVoxel(GlobalPosition.Y));
 
-    if (terrain != null && terrain.IsRunning && !terrain.HasCollisionAt(GlobalPosition))
+    if (terrain != null && terrain.IsRunning && !Noclip && !outsideWorld && !terrain.HasCollisionAt(GlobalPosition))
     {
       Velocity = Vector3.Zero;
       Publish();
@@ -442,20 +446,32 @@ public partial class PlayerController : CharacterBody3D, IDamageable
       return;
     }
 
+    // Straight ahead first. If that is a wall (say the corner of a diagonal staircase, where the block in front is taller than
+    // the two beside it), try 45 degrees to each side: the lower step there is what we climb, and the next tick continues from it.
     var direction = flat.Normalized();
+
+    if (!StepUpToward(direction) && !StepUpToward(direction.Rotated(Vector3.Up, Mathf.Pi / 4f)))
+    {
+      StepUpToward(direction.Rotated(Vector3.Up, -Mathf.Pi / 4f));
+    }
+  }
+
+  /// <summary>Tries the step-up described at <see cref="TryStepUp"/> toward one direction; true when it lifted the body.</summary>
+  bool StepUpToward(Vector3 direction)
+  {
     var near = direction * 0.2f;
     var start = GlobalTransform;
 
     if (!TestMove(start, near, probe) || Math.Abs(probe.GetNormal().Y) > 0.5f)
     {
-      return; // nothing in the way, or it is a slope the normal floor handling deals with
+      return false; // nothing in the way, or it is a slope the normal floor handling deals with
     }
 
     var lift = Vector3.Up * Tuning.StepHeight;
 
     if (TestMove(start, lift))
     {
-      return; // no headroom
+      return false; // no headroom
     }
 
     // Is it a wall or a step? Only the ledge right in front matters, so check a short way ahead from the raised position. (A
@@ -466,7 +482,7 @@ public partial class PlayerController : CharacterBody3D, IDamageable
 
     if (TestMove(raised, clear))
     {
-      return; // still blocked up there: a wall, not a step
+      return false; // still blocked up there: a wall, not a step
     }
 
     // Then probe far enough ahead that the whole capsule is over the ledge, so the landing test meets its flat top and not
@@ -478,19 +494,21 @@ public partial class PlayerController : CharacterBody3D, IDamageable
 
     if (!TestMove(ahead, Vector3.Down * Tuning.StepHeight, probe))
     {
-      return; // no ground to land on
+      return false; // no ground to land on
     }
 
     var rise = Tuning.StepHeight - probe.GetTravel().Length();
 
     if (rise < 0.02f)
     {
-      return;
+      return false;
     }
 
     GlobalPosition += Vector3.Up * (rise + 0.005f);
     smoother.Reset(GlobalPosition);
     stepCameraOffset -= rise;
+
+    return true;
   }
 
   void Respawn()

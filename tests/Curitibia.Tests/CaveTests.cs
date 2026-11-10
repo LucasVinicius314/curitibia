@@ -361,7 +361,20 @@ public class CaveTests
       var neighbours = new ChunkData?[] { g.GenerateChunk(cx + 1, cz), g.GenerateChunk(cx - 1, cz), g.GenerateChunk(cx, cz + 1), g.GenerateChunk(cx, cz - 1) };
       var mesh = ChunkMesher.Build(chunk, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f); // the whole column: no cut, so no caps
 
-      var visibleFaces = mesh.TriangleCount / 2;
+      var plants = 0;
+
+      for (int y = 0; y < VoxelMath.ChunkHeight; y++)
+      {
+        for (int z = 0; z < VoxelMath.ChunkSize; z++)
+        {
+          for (int x = 0; x < VoxelMath.ChunkSize; x++)
+          {
+            plants += chunk.Get(x, y, z) == BlockIds.ShortGrass ? 1 : 0;
+          }
+        }
+      }
+
+      var visibleFaces = mesh.TriangleCount / 2 - plants * 4; // the crossed quads of short grass are not block faces
       var triangles = mesh.CollisionTriangles;
       double area = 0;
 

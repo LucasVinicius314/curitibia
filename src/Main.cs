@@ -38,6 +38,7 @@ public partial class Main : Node3D
     session = NetSession.Instance;
     screenshotPath = DevArgs.Get("screenshot");
 
+    AddChild(new DayNight { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
     AddChild(new CaveLight { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
 
     var request = session.Pending ?? new StartRequest(SessionKind.Solo);
@@ -106,10 +107,7 @@ public partial class Main : Node3D
       SpawnPlayerFor(1);
     }
 
-    if (!DevArgs.Has("no-enemies"))
-    {
-      EnemySpawner.SpawnAround(0, 0);
-    }
+    EnemySpawner.Enabled = !DevArgs.Has("no-enemies");
   }
 
   void StartAsClient(string code)

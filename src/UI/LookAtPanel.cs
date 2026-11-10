@@ -115,7 +115,7 @@ public partial class LookAtPanel : CenterContainer
     if (terrain != boundTerrain)
     {
       boundTerrain = terrain;
-      solid = terrain.IsSolid; // one delegate per world, not per frame
+      solid = terrain.IsTargetable; // one delegate per world, not per frame
     }
 
     var origin = player.EyePosition / VoxelMath.BlockSize;

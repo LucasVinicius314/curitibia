@@ -11,7 +11,7 @@ public static class ItemRegistry
 {
   static readonly string[] Paths =
   {
-    "res://data/items/sword.tres",
+    "res://data/items/copper_sword.tres",
     "res://data/items/copper_pickaxe.tres",
     "res://data/items/stone.tres",
     "res://data/items/grass.tres",

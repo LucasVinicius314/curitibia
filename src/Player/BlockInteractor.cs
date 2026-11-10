@@ -113,7 +113,7 @@ public partial class BlockInteractor : Node
       origin.X, origin.Y, origin.Z,
       direction.X, direction.Y, direction.Z,
       Reach / VoxelMath.BlockSize,
-      terrain.IsSolid,
+      terrain.IsTargetable,
       out var hx, out var hy, out var hz,
       out var nx, out var ny, out var nz);
 

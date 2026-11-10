@@ -33,6 +33,17 @@ public static class GameSettings
   public const int MaxRenderDistance = 16;
   public const int DefaultRenderDistance = 12;
 
+  /// <summary>Time of day set from the settings (0 to 1, 0.5 noon): with the cycle on it shifts the clock, off it is the fixed time. Not saved.</summary>
+  public static float TimeOffset { get; set; }
+
+  public static float FixedTime { get; set; } = 0.5f;
+
+  public const float MinShadowDistance = 50f;
+  public const float MaxShadowDistance = 500f;
+  public const float DefaultShadowDistance = 100f;
+
+  static float? shadowDistance;
+  static bool? dayNightCycle;
   static int? renderDistance;
   static float? fieldOfView;
   static float? mouseSensitivity;
@@ -105,6 +116,73 @@ public static class GameSettings
       var config = new ConfigFile();
       config.Load(Path);
       config.SetValue("input", "sensitivity", (double)clamped);
+      config.Save(Path);
+
+      Changed?.Invoke();
+    }
+  }
+
+  /// <summary>Whether the time of day moves (a full day is 10 minutes). Off, it is always noon.</summary>
+  public static bool DayNightCycle
+  {
+    get
+    {
+      if (dayNightCycle == null)
+      {
+        var config = new ConfigFile();
+
+        dayNightCycle = config.Load(Path) != Error.Ok || (bool)config.GetValue("world", "day_night", true);
+      }
+
+      return dayNightCycle.Value;
+    }
+    set
+    {
+      if (value == DayNightCycle)
+      {
+        return;
+      }
+
+      dayNightCycle = value;
+
+      var config = new ConfigFile();
+      config.Load(Path);
+      config.SetValue("world", "day_night", value);
+      config.Save(Path);
+
+      Changed?.Invoke();
+    }
+  }
+
+  /// <summary>How far from the camera the sun casts shadows, in metres. Farther costs GPU time and spreads the shadow map thinner.</summary>
+  public static float ShadowDistance
+  {
+    get
+    {
+      if (shadowDistance == null)
+      {
+        var config = new ConfigFile();
+        var loaded = config.Load(Path) == Error.Ok ? (float)(double)config.GetValue("view", "shadow_distance", (double)DefaultShadowDistance) : DefaultShadowDistance;
+
+        shadowDistance = Mathf.Clamp(loaded, MinShadowDistance, MaxShadowDistance);
+      }
+
+      return shadowDistance.Value;
+    }
+    set
+    {
+      var clamped = Mathf.Clamp(value, MinShadowDistance, MaxShadowDistance);
+
+      if (Mathf.IsEqualApprox(clamped, ShadowDistance))
+      {
+        return;
+      }
+
+      shadowDistance = clamped;
+
+      var config = new ConfigFile();
+      config.Load(Path);
+      config.SetValue("view", "shadow_distance", (double)clamped);
       config.Save(Path);
 
       Changed?.Invoke();

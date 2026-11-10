@@ -160,6 +160,40 @@ public class WorldGeneratorTests
 
 public class ChunkMesherTests
 {
+  [Fact]
+  public void Short_grass_is_a_plant_block_without_collision_that_hides_no_face()
+  {
+    var blocks = new ChunkData();
+
+    for (int x = 0; x < 16; x++)
+    {
+      for (int z = 0; z < 16; z++)
+      {
+        blocks.Set(x, 10, z, BlockIds.Grass);
+      }
+    }
+
+    var neighbours = new ChunkData?[4];
+    var plain = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+
+    blocks.Set(3, 11, 3, BlockIds.ShortGrass);
+    blocks.Set(4, 11, 3, BlockIds.ShortGrass); // two side by side: neither hides the other
+    blocks.Set(8, 11, 8, BlockIds.Stone);
+
+    var withPlants = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f, chunkX: 2, chunkZ: -3);
+    var again = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f, chunkX: 2, chunkZ: -3);
+
+    blocks.Set(8, 11, 8, BlockIds.Air);
+
+    var plantsOnly = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f, chunkX: 2, chunkZ: -3);
+
+    Assert.Equal((plantsOnly.VertexCount - plain.VertexCount), 2 * 16); // 4 quads of 4 vertices per plant, the grass top stays whole
+    Assert.Equal(plain.CollisionTriangles, plantsOnly.CollisionTriangles); // plants never collide
+    Assert.Equal(withPlants.Positions, again.Positions);
+    Assert.False(BlockIds.IsSolid(BlockIds.ShortGrass));
+    Assert.True(BlockIds.IsPlant(BlockIds.ShortGrass));
+  }
+
   static MeshData Mesh(ChunkData blocks, ChunkData?[]? neighbours = null)
   {
     return ChunkMesher.Build(blocks, neighbours ?? new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);

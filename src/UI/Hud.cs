@@ -57,6 +57,7 @@ public partial class Hud : CanvasLayer
   Label pauseCode = null!;
   Control pauseRoom = null!;
   Control pauseMain = null!;
+  Control pauseCard = null!;
   Control pauseSettings = null!;
   VBoxContainer pauseRows = null!;
   Button resumeButton = null!;
@@ -265,6 +266,7 @@ public partial class Hud : CanvasLayer
     pause.AddChild(center);
 
     var card = new PanelContainer { CustomMinimumSize = new Vector2(480f, 0f) };
+    pauseCard = center;
     center.AddChild(card);
 
     var shell = Ui.Column(12);
@@ -276,14 +278,9 @@ public partial class Hud : CanvasLayer
     pauseMain = column;
     shell.AddChild(column);
 
-    pauseSettings = Ui.Column(12);
-    pauseSettings.Visible = false;
-    pauseSettings.AddChild(SettingsPanel.Build());
-
-    var settingsBack = Ui.Button("Back", Ui.Primary);
-    settingsBack.Pressed += () => ShowPauseSettings(false);
-    pauseSettings.AddChild(settingsBack);
-    shell.AddChild(pauseSettings);
+    // The settings are their own full-screen view on top of the pause menu.
+    pauseSettings = SettingsPanel.BuildScreen(() => ShowPauseSettings(false));
+    pause.AddChild(pauseSettings);
 
     var room = Ui.Column(6);
     room.AddChild(Ui.Label("Room code", Ui.Subtle, HorizontalAlignment.Center));
@@ -324,7 +321,7 @@ public partial class Hud : CanvasLayer
 
   void ShowPauseSettings(bool show)
   {
-    pauseMain.Visible = !show;
+    pauseCard.Visible = !show;
     pauseSettings.Visible = show;
   }
 

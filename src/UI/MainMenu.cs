@@ -58,6 +58,8 @@ public partial class MainMenu : Control
   // Settings
   LineEdit serverField = null!;
   Label serverSource = null!;
+  ScrollContainer scroll = null!;
+  Control settingsScreen = null!;
 
   public override void _Ready()
   {
@@ -72,7 +74,7 @@ public partial class MainMenu : Control
     AddChild(background);
 
     // A scroll container, so a page taller than a small window scrolls instead of being cut off.
-    var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+    scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
     scroll.SetAnchorsPreset(LayoutPreset.FullRect);
     AddChild(scroll);
 
@@ -103,7 +105,6 @@ public partial class MainMenu : Control
     pages[Page.Main] = BuildMain();
     pages[Page.Host] = BuildHost();
     pages[Page.Join] = BuildJoin();
-    pages[Page.Settings] = BuildSettings();
 
     foreach (var page in pages.Values)
     {
@@ -113,6 +114,9 @@ public partial class MainMenu : Control
     status = Ui.Paragraph("", Ui.Subtle, HorizontalAlignment.Center);
     status.CustomMinimumSize = new Vector2(0f, 48f);
     column.AddChild(status);
+
+    settingsScreen = BuildSettings(); // full screen, outside the centred card
+    AddChild(settingsScreen);
 
     AddChild(refreshTimer);
     refreshTimer.Timeout += RefreshFriendRooms;
@@ -365,41 +369,30 @@ public partial class MainMenu : Control
     return page;
   }
 
-  VBoxContainer BuildSettings()
+  Control BuildSettings()
   {
-    var page = Ui.Column(12);
+    var network = Ui.Column(8);
 
-    page.AddChild(Ui.Label("Settings", Ui.Heading));
-
-    page.AddChild(SettingsPanel.Build(showControls: false));
-
-    page.AddChild(Ui.Gap(4f));
-    page.AddChild(Ui.Label("Server address", Ui.Subtle));
+    network.AddChild(Ui.Label("Server address"));
 
     var row = Ui.Row();
     serverField = Ui.Field("https://your-server.example");
     serverField.TextSubmitted += _ => SaveServer();
     row.AddChild(serverField);
 
-    var save = Ui.Button("Save", Ui.Primary, 110f);
+    var save = Ui.Button("Save", Ui.Primary, 90f);
     save.Pressed += SaveServer;
     row.AddChild(save);
-    page.AddChild(row);
+    network.AddChild(row);
 
     serverSource = Ui.Paragraph("", Ui.Subtle);
-    page.AddChild(serverSource);
+    network.AddChild(serverSource);
 
-    page.AddChild(Ui.Paragraph(
+    network.AddChild(Ui.Paragraph(
       "This is the signaling server that introduces players to each other. It is shared by every game on this machine that uses it, and only has to be set once. Game traffic never goes through it.",
       Ui.Subtle));
 
-    page.AddChild(Ui.Gap(6f));
-
-    var back = Ui.Button("Back");
-    back.Pressed += () => ShowPage(Page.Main);
-    page.AddChild(back);
-
-    return page;
+    return SettingsPanel.BuildScreen(() => ShowPage(Page.Main), showControls: true, extra: ("Network", network));
   }
 
   // ------------------------------------------------------------------ navigation
@@ -412,6 +405,9 @@ public partial class MainMenu : Control
     {
       control.Visible = key == page;
     }
+
+    settingsScreen.Visible = page == Page.Settings;
+    scroll.Visible = page != Page.Settings;
 
     UpdateServerUi();
     refreshTimer.Stop();

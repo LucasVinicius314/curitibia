@@ -438,9 +438,42 @@ public sealed class WorldGenerator
     // and leaves only fill air, so the result does not depend on the order neighbouring chunks visit overlapping trees.
     trees.ForTreesNear(x0, z0, x0 + size - 1, z0 + size - 1, tree => PlaceTree(chunk, tree, x0, z0));
 
+    PlacePlants(chunk, x0, z0, columns);
+
     chunk.Compact();
 
     return chunk;
+  }
+
+  /// <summary>Out of 256: how many open grass tops carry a blade of short grass.</summary>
+  const int PlantShare = 90;
+
+  /// <summary>Short grass on about a third of the grass tops that are still open after the caves and trees, chosen by a hash of (seed, column).</summary>
+  void PlacePlants(ChunkData chunk, int x0, int z0, ColumnInfo[] columns)
+  {
+    const int size = VoxelMath.ChunkSize;
+
+    for (int z = 0; z < size; z++)
+    {
+      for (int x = 0; x < size; x++)
+      {
+        var h = columns[x + z * size].Height;
+
+        if (h >= VoxelMath.ChunkHeight || chunk.Get(x, h - 1, z) != BlockIds.Grass || chunk.Get(x, h, z) != BlockIds.Air)
+        {
+          continue;
+        }
+
+        var hash = (uint)(x0 + x) * 73856093u ^ (uint)(z0 + z) * 19349663u ^ (uint)p.Seed * 83492791u ^ 0x9e3779b9u;
+
+        hash ^= hash >> 15; hash *= 0x2c1b3c6du; hash ^= hash >> 12; hash *= 0x297a2d39u; hash ^= hash >> 15;
+
+        if ((hash >> 24) < PlantShare)
+        {
+          chunk.Set(x, h, z, BlockIds.ShortGrass);
+        }
+      }
+    }
   }
 
   static void PlaceTree(ChunkData chunk, Tree tree, int x0, int z0)

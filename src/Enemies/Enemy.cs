@@ -55,6 +55,12 @@ public partial class Enemy : CharacterBody3D, IDamageable
   Vector3 lastKnown;
   PlayerController? target;
   bool targetVisible;
+
+  /// <summary>Host only, kept by EnemySpawner: seconds spent far from every player (natural despawn).</summary>
+  public float IdleSeconds { get; set; }
+
+  /// <summary>Host only: a player is in sight right now.</summary>
+  public bool HasTarget => target != null && targetVisible;
   Vector3 horizontal;
   TickSmoother smoother;
 

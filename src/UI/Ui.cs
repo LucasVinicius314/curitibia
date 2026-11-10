@@ -56,13 +56,13 @@ public static class Ui
     return box;
   }
 
-  static void ButtonStyle(Theme t, StringName type, Color fill, Color hover, Color pressed, Color text)
+  static void ButtonStyle(Theme t, StringName type, Color fill, Color hover, Color pressed, Color text, int padX = 14, int padY = 9)
   {
-    t.SetStylebox("normal", type, Box(fill, Border));
-    t.SetStylebox("hover", type, Box(hover, Accent));
-    t.SetStylebox("pressed", type, Box(pressed, Accent));
-    t.SetStylebox("focus", type, Box(new Color(0, 0, 0, 0), Accent, 8, 2));
-    t.SetStylebox("disabled", type, Box(fill.Darkened(0.35f), Border.Darkened(0.3f)));
+    t.SetStylebox("normal", type, Box(fill, Border, 8, 1, padX, padY));
+    t.SetStylebox("hover", type, Box(hover, Accent, 8, 1, padX, padY));
+    t.SetStylebox("pressed", type, Box(pressed, Accent, 8, 1, padX, padY));
+    t.SetStylebox("focus", type, Box(new Color(0, 0, 0, 0), Accent, 8, 2, padX, padY));
+    t.SetStylebox("disabled", type, Box(fill.Darkened(0.35f), Border.Darkened(0.3f), 8, 1, padX, padY));
     t.SetColor("font_color", type, text);
     t.SetColor("font_hover_color", type, text);
     t.SetColor("font_pressed_color", type, text);
@@ -120,9 +120,79 @@ public static class Ui
     t.SetStylebox("grabber_area", "HSlider", Box(Accent, null, 4, 1, 0, 3));
     t.SetStylebox("grabber_area_highlight", "HSlider", Box(Accent.Lightened(0.2f), null, 4, 1, 0, 3));
 
+    // Tabs: a flat strip, the selected one raised with an accent border; the page area has no box of its own.
+    t.SetStylebox("tab_selected", "TabContainer", Box(PanelRaised, Accent, 8, 1, 16, 7));
+    t.SetStylebox("tab_unselected", "TabContainer", Box(Panel, Border, 8, 1, 16, 7));
+    t.SetStylebox("tab_hovered", "TabContainer", Box(new Color(0.20f, 0.24f, 0.32f), Border, 8, 1, 16, 7));
+    t.SetStylebox("tab_focus", "TabContainer", new StyleBoxEmpty());
+    t.SetStylebox("panel", "TabContainer", new StyleBoxEmpty());
+    t.SetColor("font_selected_color", "TabContainer", Text);
+    t.SetColor("font_hovered_color", "TabContainer", Text);
+    t.SetColor("font_unselected_color", "TabContainer", Dim);
+    t.SetConstant("side_margin", "TabContainer", 0);
+
     t.SetStylebox("separator", "HSeparator", new StyleBoxFlat { BgColor = Border, ContentMarginTop = 1, ContentMarginBottom = 1 });
 
     return t;
+  }
+
+  // ------------------------------------------------------------------ compact theme
+
+  public static readonly StringName Nav = "NavButton";
+
+  static Theme? compact;
+
+  /// <summary>
+  /// A denser variation for full-screen option screens: smaller text, tighter buttons and fields, and a flat "NavButton" for
+  /// sidebars. Set it as the <c>Theme</c> of the screen's root; anything it does not define falls back to <see cref="Theme"/>.
+  /// </summary>
+  public static Theme Compact => compact ??= BuildCompact();
+
+  static Theme BuildCompact()
+  {
+    var t = new Theme { DefaultFontSize = 15 };
+
+    ButtonStyle(t, "Button", PanelRaised, new Color(0.20f, 0.24f, 0.32f), new Color(0.12f, 0.15f, 0.21f), Text, 12, 5);
+
+    t.SetTypeVariation(Primary, "Button");
+    ButtonStyle(t, Primary, new Color(0.20f, 0.45f, 0.85f), new Color(0.28f, 0.55f, 0.95f), new Color(0.16f, 0.36f, 0.70f), Colors.White, 12, 5);
+
+    // Sidebar entries: no box until hovered or selected.
+    var clear = new Color(0, 0, 0, 0);
+
+    t.SetTypeVariation(Nav, "Button");
+    t.SetStylebox("normal", Nav, Box(clear, null, 6, 0, 14, 7));
+    t.SetStylebox("hover", Nav, Box(new Color(PanelRaised, 0.6f), null, 6, 0, 14, 7));
+    t.SetStylebox("pressed", Nav, Box(PanelRaised, Accent, 6, 1, 14, 7));
+    t.SetStylebox("hover_pressed", Nav, Box(PanelRaised, Accent, 6, 1, 14, 7));
+    t.SetStylebox("focus", Nav, Box(clear, null, 6, 0, 14, 7));
+    t.SetColor("font_color", Nav, Dim);
+    t.SetColor("font_hover_color", Nav, Text);
+    t.SetColor("font_pressed_color", Nav, Text);
+    t.SetColor("font_hover_pressed_color", Nav, Text);
+    t.SetFontSize("font_size", Nav, 16);
+    t.SetConstant("align", Nav, 0);
+    t.SetStylebox("normal", "LineEdit", Box(new Color(0.07f, 0.08f, 0.12f), Border, 8, 1, 10, 5));
+    t.SetStylebox("focus", "LineEdit", Box(new Color(0.07f, 0.08f, 0.12f), Accent, 8, 2, 10, 5));
+
+    t.SetTypeVariation(Heading, "Label");
+    t.SetFontSize("font_size", Heading, 22);
+    t.SetColor("font_color", Heading, Text);
+
+    t.SetTypeVariation(Subtle, "Label");
+    t.SetFontSize("font_size", Subtle, 13);
+    t.SetColor("font_color", Subtle, Dim);
+
+    return t;
+  }
+
+  /// <summary>A bordered surface with its own (tighter) padding, for screens that fill the window.</summary>
+  public static PanelContainer Surface(int padX = 20, int padY = 16)
+  {
+    var panel = new PanelContainer();
+    panel.AddThemeStyleboxOverride("panel", Box(Panel, Border, 12, 1, padX, padY));
+
+    return panel;
   }
 
   // ------------------------------------------------------------------ widgets
