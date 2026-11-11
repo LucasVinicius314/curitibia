@@ -7,7 +7,7 @@ namespace Curitibia.World;
 /// <summary>
 /// The day and night cycle: turns the sun across the sky, fades its strength and colour, and moves the procedural sky between
 /// its day, dusk and night colours (the ambient light follows the sky). The clock is the system clock, so every peer in a
-/// session shows the same time of day without sending anything. With GameSettings.DayNightCycle off it is always noon.
+/// session shows the same time of day: a client follows the host (the host sends its time of day and whether the cycle runs about once a second; the client keeps its own clock between messages, so only the offset is corrected). With GameSettings.DayNightCycle off it is always noon.
 /// CaveLight multiplies its own underground fade by <see cref="LightStrength"/>; the enemy spawner reads <see cref="IsNight"/>.
 /// </summary>
 public partial class DayNight : Node
@@ -48,6 +48,30 @@ public partial class DayNight : Node
   ProceduralSkyMaterial? sky;
   float? fixedTime;
 
+  /// <summary>True on a client that follows the host's time of day (the local cycle and time settings are ignored then).</summary>
+  public static bool FollowingHost { get; private set; }
+
+  static bool hostCycle;
+  static float hostOffset;
+  static float hostFixed;
+
+  static float ClockPhase() => (float)(Time.GetUnixTimeFromSystem() % DayLength / DayLength);
+
+  /// <summary>Adopts the host's time of day (0 to 1) and whether its cycle runs; called when the host's message arrives.</summary>
+  public static void FollowHost(float time, bool cycle)
+  {
+    FollowingHost = true;
+    hostCycle = cycle;
+    hostFixed = Wrap(time);
+    hostOffset = Wrap(time - ClockPhase());
+  }
+
+  /// <summary>Back to the local settings (the session ended).</summary>
+  public static void StopFollowingHost()
+  {
+    FollowingHost = false;
+  }
+
   public override void _Ready()
   {
     sky = Environment.Environment.Sky?.SkyMaterial as ProceduralSkyMaterial;
@@ -71,6 +95,11 @@ public partial class DayNight : Node
   /// <summary>Sets the time of day from the settings (0 to 1): moves the clock when the cycle runs, or the fixed time when it does not.</summary>
   public static void SetTime(float t)
   {
+    if (FollowingHost)
+    {
+      return; // the host decides
+    }
+
     if (GameSettings.DayNightCycle)
     {
       GameSettings.TimeOffset = Wrap(t - (float)(Time.GetUnixTimeFromSystem() % DayLength / DayLength));
@@ -83,9 +112,16 @@ public partial class DayNight : Node
 
   public override void _Process(double delta)
   {
-    var clock = (float)(Time.GetUnixTimeFromSystem() % DayLength / DayLength);
+    var clock = ClockPhase();
 
-    TimeOfDay = fixedTime ?? (GameSettings.DayNightCycle ? Wrap(clock + GameSettings.TimeOffset) : GameSettings.FixedTime);
+    if (FollowingHost)
+    {
+      TimeOfDay = fixedTime ?? (hostCycle ? Wrap(clock + hostOffset) : hostFixed);
+    }
+    else
+    {
+      TimeOfDay = fixedTime ?? (GameSettings.DayNightCycle ? Wrap(clock + GameSettings.TimeOffset) : GameSettings.FixedTime);
+    }
 
     // Sun height: 1 at noon, -1 at midnight, 0 at sunrise and sunset.
     var height = MathF.Sin((TimeOfDay - 0.25f) * MathF.Tau);

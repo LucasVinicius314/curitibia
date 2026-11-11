@@ -91,6 +91,12 @@ public sealed class CaveCarver
   /// <summary>Stretches the noise vertically (1 = round tunnels; more makes flat, thin ones).</summary>
   const float Squash = 1.0f;
 
+  /// <summary>
+  /// How much wider (along X and Z) the cave noise is than it is tall: 4 makes tunnels and caverns four times wider and longer
+  /// sideways while their height stays the same (the share of open space does not change, only its shape).
+  /// </summary>
+  const float HorizontalStretch = 4f;
+
   [ThreadStatic] static float[]? bufferA;
   [ThreadStatic] static float[]? bufferB;
   [ThreadStatic] static float[]? bufferC;
@@ -102,15 +108,47 @@ public sealed class CaveCarver
   readonly GradientNoise entrance;
   readonly GradientNoise pillar;
   readonly GradientNoise floorNoise;
+  readonly GradientNoise lidNoise;
+  readonly GradientNoise shaftNoise;
+
+  /// <summary>
+  /// The caverns are stacked levels: every LidPeriod layers a sheet of solid rock LidThickness thick (wobbled up and down by up to
+  /// LidWobble layers, so it undulates instead of being a flat plane) separates one level from the next. Only a few shafts break
+  /// through a given sheet, at different places in each, so going down means finding them, not just following any tunnel.
+  /// </summary>
+  const int LidPeriod = 72;
+  const int LidThickness = 12;
+  const int LidWobble = 20;
+
+  /// <summary>A shaft through a sheet is where the shaft noise (about -1 to 1) is above this: a few percent of the area.</summary>
+  const float ShaftThreshold = 0.7f;
+
+  /// <summary>A shaft is carved open through its sheet and this many layers beyond it on each side, so it reaches the levels above and below.</summary>
+  const int ShaftMargin = 6;
+
+  /// <summary>
+  /// Above the underworld's transition (<see cref="Underground.HellTop"/> + BlendBand) sits a thick rock buffer, nearly solid, so the
+  /// caverns do not run straight into the hall: only very rare shafts (above <see cref="BufferShaftThreshold"/>) cross it.
+  /// </summary>
+  public const int BufferHeight = 110;
+  const float BufferShaftThreshold = 0.85f;
 
   public CaveCarver(int seed)
   {
+    lidNoise = new GradientNoise(seed + 90001);
+    shaftNoise = new GradientNoise(seed + 91009);
     tunnelA = new GradientNoise(seed + 20011);
     tunnelB = new GradientNoise(seed + 30011);
     cavern = new GradientNoise(seed + 40009);
     entrance = new GradientNoise(seed + 50021);
     pillar = new GradientNoise(seed + 70001);
     floorNoise = new GradientNoise(seed + 80021);
+  }
+
+  /// <summary>Whether caves are carved right up to the surface at a world column (a cave mouth): there the ground itself can be missing, so nothing may be built on it.</summary>
+  public bool IsMouth(int wx, int wz)
+  {
+    return entrance.Sample(wx * 0.008f + 17.3f, wz * 0.008f + 5.1f) > 0.3f;
   }
 
   /// <summary>Half-width of a tunnel in noise units at a layer: roomy in the caverns, wider still in the underworld, smooth between.</summary>
@@ -185,15 +223,32 @@ public sealed class CaveCarver
     // How high a column may be carved: under the crust, or right up to the surface where a cave mouth opens.
     Span<int> limit = stackalloc int[size * size];
     Span<int> floorTop = stackalloc int[size * size]; // the solid floor of the underworld hall, per column
+    Span<int> lidShift = stackalloc int[size * size]; // how far the rock sheets between levels are moved up or down, per column
+    Span<bool> bufferShaft = stackalloc bool[size * size];
 
     for (int z = 0; z < size; z++)
     {
       for (int x = 0; x < size; x++)
       {
-        var mouth = entrance.Sample((x0 + x) * 0.008f + 17.3f, (z0 + z) * 0.008f + 5.1f) > 0.3f;
-
-        limit[x + z * size] = heights[x + z * size] - 1 - (mouth ? 0 : Crust);
+        limit[x + z * size] = heights[x + z * size] - 1 - (IsMouth(x0 + x, z0 + z) ? 0 : Crust);
         floorTop[x + z * size] = FloorAt(x0 + x, z0 + z);
+        lidShift[x + z * size] = (int)MathF.Round(lidNoise.Sample((x0 + x) * 0.006f, (z0 + z) * 0.006f) / 0.7f * LidWobble);
+        bufferShaft[x + z * size] = shaftNoise.Sample((x0 + x) * 0.05f + 3.3f, (z0 + z) * 0.05f + 8.8f) / 0.7f > BufferShaftThreshold;
+      }
+    }
+
+    // Which columns have a shaft through each sheet (a separate set of places for every sheet).
+    var sheets = (Math.Min(VoxelMath.ChunkHeight, tallest) + 2 * LidWobble) / LidPeriod + 1;
+    var shafts = new bool[sheets * size * size];
+
+    for (int k = 0; k < sheets; k++)
+    {
+      for (int z = 0; z < size; z++)
+      {
+        for (int x = 0; x < size; x++)
+        {
+          shafts[(k * size + z) * size + x] = shaftNoise.Sample((x0 + x) * 0.045f + k * 13.7f, (z0 + z) * 0.045f - k * 9.1f + 40f) / 0.7f > ShaftThreshold;
+        }
       }
     }
 
@@ -206,6 +261,8 @@ public sealed class CaveCarver
     var c = bufferC ??= new float[a.Length];
     var d = bufferD ??= new float[a.Length];
     var pillarTop = Underground.HellTop + Underground.BlendBand + Cell; // layers above this never hold pillars
+    var tunnelSide = TunnelFrequency / HorizontalStretch;
+    var cavernSide = CavernFrequency / HorizontalStretch;
 
     for (int cy = 0; cy <= cubeLayers; cy++)
     {
@@ -219,9 +276,9 @@ public sealed class CaveCarver
           var wz = z0 + cz * Cell;
           var i = (cy * Corners + cz) * Corners + cx;
 
-          a[i] = tunnelA.Sample(wx * TunnelFrequency, y * TunnelFrequency * Squash, wz * TunnelFrequency);
-          b[i] = tunnelB.Sample(wx * TunnelFrequency + 31.7f, y * TunnelFrequency * Squash + 11.9f, wz * TunnelFrequency + 7.3f);
-          c[i] = cavern.Sample(wx * CavernFrequency, y * CavernFrequency * Squash, wz * CavernFrequency);
+          a[i] = tunnelA.Sample(wx * tunnelSide, y * TunnelFrequency * Squash, wz * tunnelSide);
+          b[i] = tunnelB.Sample(wx * tunnelSide + 31.7f, y * TunnelFrequency * Squash + 11.9f, wz * tunnelSide + 7.3f);
+          c[i] = cavern.Sample(wx * cavernSide, y * CavernFrequency * Squash, wz * cavernSide);
           d[i] = y <= pillarTop ? pillar.Sample(wx * PillarFrequency, y * PillarVertical, wz * PillarFrequency) : -1f;
         }
       }
@@ -319,6 +376,11 @@ public sealed class CaveCarver
                   continue;
                 }
 
+                if (IsSealed(layer, x + z * size, lidShift, bufferShaft, shafts))
+                {
+                  continue;
+                }
+
                 if (allOpen)
                 {
                   chunk.Set(x, layer, z, layer < Underground.LavaTop ? BlockIds.Magma : BlockIds.Air);
@@ -358,6 +420,65 @@ public sealed class CaveCarver
         }
       }
     }
+
+    // Shafts are real holes: open from the lower level to the upper one, whatever the cave noise says there.
+    for (int z = 0; z < size; z++)
+    {
+      for (int x = 0; x < size; x++)
+      {
+        var column = x + z * size;
+        var top = limit[column];
+        var bottom = Math.Max(Underground.SolidFloor, floorTop[column]);
+
+        if (bufferShaft[column])
+        {
+          OpenLayers(chunk, x, z, Math.Max(bottom, Underground.HellTop + Underground.BlendBand), Math.Min(top, Underground.HellTop + Underground.BlendBand + BufferHeight - 1));
+        }
+
+        for (int k = 0; k < sheets; k++)
+        {
+          if (!shafts[k * size * size + column])
+          {
+            continue;
+          }
+
+          var start = k * LidPeriod - lidShift[column] - LidWobble; // first layer of this sheet in this column
+
+          OpenLayers(chunk, x, z, Math.Max(bottom, Math.Max(start - ShaftMargin, Underground.HellTop + Underground.BlendBand + BufferHeight)), Math.Min(top, start + LidThickness + ShaftMargin - 1));
+        }
+      }
+    }
+  }
+
+  static void OpenLayers(ChunkData chunk, int x, int z, int from, int to)
+  {
+    for (int layer = from; layer <= to; layer++)
+    {
+      chunk.Set(x, layer, z, BlockIds.Air);
+    }
+  }
+
+  /// <summary>
+  /// Whether the rock at a layer of a column stays solid whatever the caves say: the buffer above the underworld (but for its rare
+  /// shafts) and the sheets between the levels of the caverns (but for their shafts). The blend band and the underworld are open.
+  /// </summary>
+  static bool IsSealed(int layer, int column, ReadOnlySpan<int> lidShift, ReadOnlySpan<bool> bufferShaft, bool[] shafts)
+  {
+    const int bufferLow = Underground.HellTop + Underground.BlendBand;
+
+    if (layer < bufferLow)
+    {
+      return false;
+    }
+
+    if (layer < bufferLow + BufferHeight)
+    {
+      return !bufferShaft[column];
+    }
+
+    var s = layer + lidShift[column] + LidWobble; // always positive
+
+    return s % LidPeriod < LidThickness && !shafts[(s / LidPeriod) * VoxelMath.ChunkSize * VoxelMath.ChunkSize + column];
   }
 
   static float Min8(float[] v, int i0, int i1, int i2, int i3, int i4, int i5, int i6, int i7)

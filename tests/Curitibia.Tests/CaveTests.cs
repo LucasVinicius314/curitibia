@@ -59,13 +59,13 @@ public class CaveTests
           for (int y = 0; y < Underground.HellTop - Underground.BlendBand; y += 5)
           {
             var block = chunk.Get(x, y, z);
-            Assert.True(block is BlockIds.Air or BlockIds.Hellrock or BlockIds.Magma, $"{block} at layer {y}");
+            Assert.True(block is BlockIds.Air or BlockIds.Hellrock or BlockIds.Magma || (block >= BlockIds.CopperOre && block <= BlockIds.PlatinumOre), $"{block} at layer {y}");
           }
 
           for (int y = Underground.HellTop + Underground.BlendBand; y < Underground.HellTop + 200; y += 5)
           {
             var block = chunk.Get(x, y, z);
-            Assert.True(block is BlockIds.Air or BlockIds.Stone, $"{block} at layer {y}");
+            Assert.True(block is BlockIds.Air or BlockIds.Stone || (block >= BlockIds.CopperOre && block <= BlockIds.PlatinumOre), $"{block} at layer {y}");
           }
         }
       }
@@ -299,6 +299,212 @@ public class CaveTests
     Assert.InRange(cavern, 8.0, 20.0);
     Assert.InRange(under, 55.0, 90.0);
     Assert.True(under > cavern * 2, "the underworld is far more open");
+  }
+
+  [Fact]
+  public void The_caverns_are_separate_levels_and_a_rock_buffer_sits_above_the_underworld()
+  {
+    var g = Make(42);
+    var bufferLow = Underground.HellTop + Underground.BlendBand;
+    var bufferHigh = bufferLow + CaveCarver.BufferHeight;
+    long buffer = 0, bufferOpen = 0, columns = 0, longRuns = 0, above = 0, aboveOpen = 0;
+
+    foreach (var chunk in Chunks(g, 20))
+    {
+      for (int z = 0; z < 32; z += 2)
+      {
+        for (int x = 0; x < 32; x += 2)
+        {
+          for (int y = bufferLow; y < bufferHigh; y += 2)
+          {
+            buffer++;
+            bufferOpen += chunk.Get(x, y, z) == BlockIds.Air ? 1 : 0;
+          }
+
+          // The longest unbroken open stretch of the column through the caverns, from under the buffer up to under the crust.
+          int run = 0, longest = 0;
+
+          for (int y = bufferHigh; y < VoxelMath.SeaLevel - 40; y++)
+          {
+            above++;
+
+            if (chunk.Get(x, y, z) == BlockIds.Air)
+            {
+              aboveOpen++;
+              longest = Math.Max(longest, ++run);
+            }
+            else
+            {
+              run = 0;
+            }
+          }
+
+          columns++;
+          longRuns += longest > 80 ? 1 : 0;
+        }
+      }
+    }
+
+    output.WriteLine($"buffer {100.0 * bufferOpen / buffer:F2}% open, caverns above it {100.0 * aboveOpen / above:F1}% open, {100.0 * longRuns / columns:F1}% of columns have an open stretch over 80 layers");
+    Assert.True(100.0 * bufferOpen / buffer < 2.0, "the rock above the underworld is nearly solid");
+    Assert.True(100.0 * longRuns / columns < 10.0, "the caverns are levels, not long open shafts");
+  }
+
+  const int Area = 6;
+
+  /// <summary>Of the open voxels at the top level of the caverns, the share of columns where the open space can be followed (through open voxels only) down to the bottom of the caverns, within an Area x Area chunk square.</summary>
+  static double ReachDownShare(WorldGenerator g, int chunkX, int chunkZ, int top, int bottom)
+  {
+    const int size = VoxelMath.ChunkSize;
+    const int span = Area * size;
+    var layers = top - bottom + 1;
+    var chunks = new ChunkData[Area, Area];
+
+    for (int i = 0; i < Area; i++)
+    {
+      for (int j = 0; j < Area; j++)
+      {
+        chunks[i, j] = g.GenerateChunk(chunkX + i, chunkZ + j);
+      }
+    }
+
+    bool Open(int x, int y, int z) => chunks[x / size, z / size].Get(x % size, y, z % size) == BlockIds.Air;
+
+    var seen = new bool[span * span * layers];
+    var queue = new Queue<(int x, int y, int z)>();
+    var seeds = 0;
+
+    for (int z = 0; z < span; z++)
+    {
+      for (int x = 0; x < span; x++)
+      {
+        if (Open(x, top, z))
+        {
+          seen[(top - bottom) * span * span + z * span + x] = true;
+          queue.Enqueue((x, top, z));
+          seeds++;
+        }
+      }
+    }
+
+    var reached = new bool[span * span];
+
+    while (queue.Count > 0)
+    {
+      var (cx, cy, cz) = queue.Dequeue();
+
+      if (cy == bottom)
+      {
+        reached[cz * span + cx] = true;
+      }
+
+      foreach (var (dx, dy, dz) in new[] { (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1) })
+      {
+        int nx = cx + dx, ny = cy + dy, nz = cz + dz;
+
+        if (nx < 0 || nz < 0 || nx >= span || nz >= span || ny < bottom || ny > top)
+        {
+          continue;
+        }
+
+        var index = (ny - bottom) * span * span + nz * span + nx;
+
+        if (!seen[index] && Open(nx, ny, nz))
+        {
+          seen[index] = true;
+          queue.Enqueue((nx, ny, nz));
+        }
+      }
+    }
+
+    var bottomOpen = 0;
+    var bottomReached = 0;
+
+    for (int z = 0; z < span; z++)
+    {
+      for (int x = 0; x < span; x++)
+      {
+        bottomOpen += Open(x, bottom, z) ? 1 : 0;
+        bottomReached += reached[z * span + x] ? 1 : 0;
+      }
+    }
+
+    return seeds == 0 ? 0 : 100.0 * bottomReached / Math.Max(1, bottomOpen);
+  }
+
+  [Fact]
+  public void Going_down_through_the_caverns_needs_finding_a_shaft()
+  {
+    var g = Make(42);
+    var bottom = Underground.HellTop + Underground.BlendBand + CaveCarver.BufferHeight + 2;
+
+    var open = 0;
+    var total = 0;
+
+    for (int i = 0; i < 16; i++)
+    {
+      var share = ReachDownShare(g, i * 29 - 200, (i * 53) % 160 - 80, VoxelMath.SeaLevel - 45, bottom);
+      total++;
+      open += share > 20 ? 1 : 0;
+    }
+
+    output.WriteLine($"{open} of {total} squares of {Area} x {Area} chunks have an open way from the top level of the caverns to the bottom one");
+    Assert.InRange(open, 1, total / 2); // possible, but not from wherever you happen to dig in (without the rock sheets it was nearly every area)
+  }
+
+  [Fact]
+  public void No_tree_stands_on_nothing_where_a_cave_breaks_through_the_ground()
+  {
+    var g = Make(42);
+    var trunks = 0;
+    var floating = 0;
+
+    for (int n = 0; n < 250; n++)
+    {
+      var chunk = g.GenerateChunk(n * 3 - 370, (n * 7) % 90 - 45);
+
+      if (g.BiomeAt((n * 3 - 370) * 32 + 16, ((n * 7) % 90 - 45) * 32 + 16) == BiomeId.Grove)
+      {
+        continue; // the grove has giants (limbs, stumps and dead logs with air under parts of them on purpose)
+      }
+
+      for (int z = 0; z < 32; z++)
+      {
+        for (int x = 0; x < 32; x++)
+        {
+          for (int y = VoxelMath.SeaLevel - 60; y < VoxelMath.SeaLevel + 300; y++)
+          {
+            var block = chunk.Get(x, y, z);
+            var isTrunk = block is BlockIds.Wood or BlockIds.BirchWood; // (cactus arms hang off the side of the stem by design)
+
+            if (!isTrunk || chunk.Get(x, y - 1, z) == block)
+            {
+              continue; // not a trunk, or not its lowest block
+            }
+
+            trunks++;
+
+            // The base of a tree stands on ground. (A trunk that bends sideways rests on the part below it one column over, so only
+            // the lowest block of a tree counts: nothing of the same trunk one layer under it, and air straight below.)
+            var bent = false;
+
+            for (int dz = -1; dz <= 1 && !bent; dz++)
+            {
+              for (int dx = -1; dx <= 1 && !bent; dx++)
+              {
+                bent = x + dx is >= 0 and < 32 && z + dz is >= 0 and < 32 && chunk.Get(x + dx, y - 1, z + dz) == block;
+              }
+            }
+
+            floating += !bent && chunk.Get(x, y - 1, z) == BlockIds.Air ? 1 : 0;
+          }
+        }
+      }
+    }
+
+    output.WriteLine($"{trunks} trunks, {floating} with nothing under them");
+    Assert.True(trunks > 200);
+    Assert.Equal(0, floating);
   }
 
   [Fact]

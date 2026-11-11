@@ -238,6 +238,40 @@ public partial class Terrain : Node3D
     return entry.MeshedCollision && entry.MeshedVersion == entry.Version && layer >= entry.MeshedFloor && layer < entry.MeshedCeiling;
   }
 
+  /// <summary>
+  /// Finds the closest place of a biome to a position, looking outward in square rings on a coarse grid (the smallest patch of a
+  /// biome is hundreds of metres across), and prefers a spot well inside it. Safe to call from a worker thread. The target is on
+  /// the ground there.
+  /// </summary>
+  public bool FindNearestBiome(Vector3 from, BiomeId biome, out Vector3 target, out float distance)
+  {
+    target = default;
+    distance = 0f;
+
+    var gen = generator;
+
+    if (gen == null)
+    {
+      return false;
+    }
+
+    if (!gen.FindNearestBiome(VoxelMath.WorldToVoxel(from.X), VoxelMath.WorldToVoxel(from.Z), biome, out var x, out var z))
+    {
+      return false;
+    }
+
+    target = new Vector3(VoxelMath.VoxelCenter(x), gen.ColumnHeight(x, z) * VoxelMath.BlockSize + 1.5f, VoxelMath.VoxelCenter(z));
+    distance = new Vector2(target.X - from.X, target.Z - from.Z).Length();
+
+    return true;
+  }
+
+  /// <summary>Height of the ground itself in world units (no trees), from the generator.</summary>
+  public float GroundHeightAt(int wx, int wz)
+  {
+    return (generator?.ColumnHeight(wx, wz) ?? VoxelMath.SeaLevel) * VoxelMath.BlockSize;
+  }
+
   /// <summary>Surface height in world units (top of the highest terrain or tree voxel of voxel column wx, wz) from the generator, ignoring edits.</summary>
   public float SurfaceHeightAt(int wx, int wz)
   {
@@ -318,6 +352,20 @@ public partial class Terrain : Node3D
 
   // ---------------------------------------------------------------- edits
 
+  /// <summary>The damage the blocks have taken (host only; clients just draw the cracks the host tells them about).</summary>
+  public BlockDamage Damage { get; } = new();
+
+  /// <summary>Raised on every peer when a block's crack stage changed (1 to <see cref="BreakCracks.Stages"/>, 0 = healed or gone).</summary>
+  public event Action<Vector3I, int>? CrackChanged;
+
+  /// <summary>On a client: asks the host to apply a hit of the held tool to a block (the host works the power and damage out itself).</summary>
+  public Action<Vector3I>? HitRouter { get; set; }
+
+  readonly List<(int X, int Y, int Z)> healed = new();
+
+  /// <summary>Raised on every peer when a block was removed (the voxel and what it was); the host's drop spawner makes the item.</summary>
+  public event Action<Vector3I, byte>? BlockBroken;
+
   /// <summary>Entry point for gameplay: routes to the network when connected as a client, else applies directly.</summary>
   public void RequestSetBlock(Vector3I voxel, byte id)
   {
@@ -329,6 +377,45 @@ public partial class Terrain : Node3D
     {
       ApplyEdit(voxel, id);
     }
+  }
+
+  /// <summary>Entry point for gameplay: a swing of a tool at a block. A client asks the host; the host (and a solo game) applies it.</summary>
+  public void RequestHit(Vector3I voxel, int power, float damage)
+  {
+    if (HitRouter != null)
+    {
+      HitRouter(voxel);
+    }
+    else
+    {
+      HostHit(voxel, power, damage);
+    }
+  }
+
+  /// <summary>Host: the block takes the hit (it keeps the damage for <see cref="BlockDamage.Lifetime"/> seconds), shows its cracks, and breaks when its durability is spent.</summary>
+  public void HostHit(Vector3I voxel, int power, float damage)
+  {
+    if (!VoxelMath.InWorldHeight(voxel.Y))
+    {
+      return;
+    }
+
+    var result = Damage.Hit(voxel.X, voxel.Y, voxel.Z, GetBlock(voxel.X, voxel.Y, voxel.Z), power, damage);
+
+    if (result == MiningResult.Broken)
+    {
+      ApplyEdit(voxel, BlockIds.Air);
+    }
+    else if (result == MiningResult.Mining)
+    {
+      CrackChanged?.Invoke(voxel, Damage.Stage(voxel.X, voxel.Y, voxel.Z, BreakCracks.Stages));
+    }
+  }
+
+  /// <summary>A client draws the crack stage the host told it about.</summary>
+  public void ShowCrack(Vector3I voxel, int stage)
+  {
+    CrackChanged?.Invoke(voxel, stage);
   }
 
   /// <summary>Applies an edit for real (authoritative path) and remembers it for late joiners and reloaded chunks.</summary>
@@ -350,11 +437,23 @@ public partial class Terrain : Node3D
         return false; // nothing changes: do not record or announce it
       }
 
+      var previous = entry.Blocks.Get(lx, voxel.Y, lz);
+
+      if (Damage.Clear(voxel.X, voxel.Y, voxel.Z))
+      {
+        CrackChanged?.Invoke(voxel, 0); // the block changed: its cracks are gone
+      }
+
       entry.Blocks.Set(lx, voxel.Y, lz, id);
       entry.Version++;
       BumpBorderNeighbours(coord, lx, lz);
       dirty = true;
       ChunkChanged?.Invoke(coord);
+
+      if (id == BlockIds.Air && previous != BlockIds.Air)
+      {
+        BlockBroken?.Invoke(voxel, previous);
+      }
     }
 
     // Remember the edit for late joiners and for chunks that are not loaded (or get reloaded) later.
@@ -426,6 +525,17 @@ public partial class Terrain : Node3D
 
     DrainDataResults();
     DrainMeshResults();
+
+    if (Damage.Count > 0)
+    {
+      healed.Clear();
+      Damage.Tick((float)delta, healed);
+
+      foreach (var (x, y, z) in healed)
+      {
+        CrackChanged?.Invoke(new Vector3I(x, y, z), 0); // ten seconds without a hit: the block heals
+      }
+    }
 
     var chunks = new Vector2I[viewers.Count];
     var sections = new int[viewers.Count];
@@ -725,7 +835,12 @@ public partial class Terrain : Node3D
 
     Task.Run(() =>
     {
-      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide, chunkX: entry.Coord.X, chunkZ: entry.Coord.Y);
+      var grassTint = new byte[VoxelMath.ChunkSize * VoxelMath.ChunkSize * 3];
+      var foliageTint = new byte[grassTint.Length];
+
+      generator!.ColumnTints(entry.Coord.X, entry.Coord.Y, grassTint, foliageTint);
+
+      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide, chunkX: entry.Coord.X, chunkZ: entry.Coord.Y, grassTint: grassTint, foliageTint: foliageTint);
       meshResults.Enqueue(new MeshResult { Entry = entry, Version = version, Floor = floor, Ceiling = ceiling, Collision = collide, Build = ChunkBuild.From(data, collide) });
     });
   }

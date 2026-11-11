@@ -13,6 +13,24 @@ public partial class ItemBehavior : Resource
   /// <summary>Seconds between uses.</summary>
   [Export] public float Cooldown { get; set; } = 0.25f;
 
+  /// <summary>
+  /// Pickaxe power while held primary mines (0 = bare hand): it must reach a block's required power (BlockIds.RequiredPower)
+  /// or the block cannot be broken with it at all.
+  /// </summary>
+  [Export] public int MiningPower { get; set; }
+
+  /// <summary>Swings per second while the primary button is held (0 = this item does not mine): the attack frequency.</summary>
+  [Export] public float MiningSpeed { get; set; }
+
+  /// <summary>Damage one swing deals to the targeted block's durability (BlockIds.Durability), if the power is enough.</summary>
+  [Export] public float MiningDamage { get; set; }
+
+  /// <summary>Seconds before the next use after this one: the mining swing rate for a primary use of a mining tool, else the Cooldown.</summary>
+  public float IntervalAfter(bool primary)
+  {
+    return primary && MiningSpeed > 0f ? 1f / MiningSpeed : Cooldown;
+  }
+
   /// <summary>Seconds after the use is announced before the host applies it, so damage lands when the swing connects (0 = at once).</summary>
   [Export] public float HitDelay { get; set; }
 

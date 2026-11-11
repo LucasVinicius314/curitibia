@@ -20,6 +20,7 @@ public partial class RegionBanner : VBoxContainer
     new(0.80f, 0.92f, 1.00f), // Snow
     new(0.55f, 0.84f, 0.58f), // Hills
     new(0.74f, 0.78f, 0.92f), // Mountains
+    new(0.42f, 0.90f, 0.80f), // Titan Grove
   };
 
   Label title = null!;

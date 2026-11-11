@@ -9,6 +9,9 @@ public enum TreeKind : byte
   Pine,
   Cactus,
   Birch,
+
+  /// <summary>A titan of the Titan Grove: a trunk several voxels thick and 80 to 110 m tall, flared at the roots, with limbs and tiers of canopy.</summary>
+  Giant,
 }
 
 /// <summary>
@@ -28,9 +31,15 @@ public readonly record struct Tree(int X, int Z, int BaseY, int TrunkHeight, int
   int LeanZ => Lean switch { 3 => 1, 4 => -1, _ => 0 };
 
   /// <summary>The middle of the canopy and of the top of the trunk, in voxel units (between the columns of an even trunk).</summary>
-  float CentreX => X + (Width - 1) / 2f + LeanX;
+  public float CentreX => X + (Width - 1) / 2f + LeanX;
 
-  float CentreZ => Z + (Width - 1) / 2f + LeanZ;
+  public float CentreZ => Z + (Width - 1) / 2f + LeanZ;
+
+  /// <summary>How far, in voxels, the tree reaches from its root column (a giant's canopy is wide).</summary>
+  public int Reach => Kind == TreeKind.Giant ? (int)(CanopyRadius * LimbReachScale) + Width + 2 : TreeFeature.MaxReach;
+
+  /// <summary>The longest limbs of a giant reach this many times as far as the leaves above them (and nothing of the tree goes farther).</summary>
+  public const float LimbReachScale = 1.7f;
 
   /// <summary>Block of the trunk (and cactus arm): always wins over leaves.</summary>
   public byte TrunkBlock => Kind switch
@@ -58,6 +67,11 @@ public readonly record struct Tree(int X, int Z, int BaseY, int TrunkHeight, int
   /// <summary>The trunk is <see cref="Width"/> voxels square and covers X..X+Width-1, Z..Z+Width-1 (shifted by the lean above the middle).</summary>
   public bool IsTrunk(int x, int y, int z)
   {
+    if (Kind == TreeKind.Giant)
+    {
+      return IsGiantWood(x, y, z);
+    }
+
     if (y >= BaseY && y < BaseY + TrunkHeight)
     {
       var middle = BaseY + TrunkHeight / 2;
@@ -103,8 +117,163 @@ public readonly record struct Tree(int X, int Z, int BaseY, int TrunkHeight, int
     return x >= pillar0 && x < pillar0 + Width && y >= armY && y < armY + rise;
   }
 
+  // ---- giants: Width is the trunk's thickness at the roots' end (7 to 9), TrunkHeight the whole height from the root, CanopyRadius the
+  // radius of the lowest tier of leaves; the variant picks how many tiers there are.
+
+  static readonly float[] TierHeight = { 0.50f, 0.60f, 0.70f, 0.80f, 0.90f };
+  static readonly float[] TierScale = { 1f, 0.95f, 0.85f, 0.7f, 0.5f };
+
+  /// <summary>Tiers of leaves, stacked so close that they merge into one deep canopy (4 or 5).</summary>
+  public int Tiers => Variant == 1 ? 4 : 5;
+
+  /// <summary>Layers above the root where a giant's trunk stops: at the middle of its top tier of leaves.</summary>
+  public int GiantTrunkEnd => (int)(TrunkHeight * TierHeight[Tiers - 1]);
+
+  /// <summary>The layers a tier of leaves (and the limbs under it) occupies, for a giant.</summary>
+  public void TierBand(int tier, out int low, out int high)
+  {
+    var radius = CanopyRadius * TierScale[tier];
+    var thickness = LeafThickness(radius);
+    var centre = BaseY + TrunkHeight * TierHeight[tier];
+
+    low = (int)(centre - thickness) - 4;
+    high = (int)(centre + thickness) + 1;
+  }
+
+  static float LeafThickness(float radius) => 8f + radius * 0.22f;
+
+  float Phase(int salt) => Scatter(X, salt, Z) * MathF.Tau;
+
+  /// <summary>The middle of a giant's trunk at a height: it sways gently from side to side (the base stays where it is rooted).</summary>
+  public void TrunkCentreAt(int y, out float x, out float z)
+  {
+    var up = Math.Max(0, y - BaseY);
+    var ramp = Math.Min(1f, up / 40f);
+
+    ramp = ramp * ramp * (3f - 2f * ramp);
+    x = CentreX + 2.6f * ramp * MathF.Sin(up / 47f + Phase(5));
+    z = CentreZ + 2.6f * ramp * MathF.Cos(up / 53f + Phase(6));
+  }
+
+  /// <summary>The average radius of a giant's trunk at a height: flared out at the roots, tapering a little as it rises.</summary>
+  public float TrunkRadiusAt(int y)
+  {
+    var up = Math.Max(0, y - BaseY);
+    var flare = Math.Max(0f, 1f - up / 16f);
+
+    return Width / 2f * (1f + 1.1f * flare * flare) * (1f - 0.3f * up / TrunkHeight);
+  }
+
+  /// <summary>The trunk: round on average but gnarled (bulges and hollows that turn as it climbs), swaying, flared at the roots. The branches, roots and vines are in <see cref="GiantStructure"/>.</summary>
+  bool IsGiantWood(int x, int y, int z)
+  {
+    if (y < BaseY || y >= BaseY + GiantTrunkEnd) // the trunk ends inside the top tier of leaves, not above it
+    {
+      return false;
+    }
+
+    TrunkCentreAt(y, out var cx, out var cz);
+
+    var dx = x - cx;
+    var dz = z - cz;
+    var d2 = dx * dx + dz * dz;
+    var radius = TrunkRadiusAt(y);
+
+    if (d2 > radius * radius * 1.7f)
+    {
+      return false;
+    }
+
+    if (d2 <= radius * radius * 0.5f)
+    {
+      return true;
+    }
+
+    var up = y - BaseY;
+    var angle = MathF.Atan2(dz, dx);
+    var gnarl = 1f + 0.12f * MathF.Sin(3f * angle + Phase(7) + up / 27f) + 0.07f * MathF.Sin(5f * angle + Phase(8) - up / 17f);
+
+    return d2 <= radius * radius * gnarl * gnarl;
+  }
+
+  /// <summary>A smooth noise of a world column (about -1 to 1) that makes the outline of the canopy lumpy instead of circular.</summary>
+  public float CanopyLump(int x, int z)
+  {
+    const float scale = 1f / 11f;
+    var fx = x * scale;
+    var fz = z * scale;
+    var ix = (int)MathF.Floor(fx);
+    var iz = (int)MathF.Floor(fz);
+    var tx = fx - ix;
+    var tz = fz - iz;
+
+    tx = tx * tx * (3f - 2f * tx);
+    tz = tz * tz * (3f - 2f * tz);
+
+    var a = Scatter(ix, 21, iz);
+    var b = Scatter(ix + 1, 21, iz);
+    var c = Scatter(ix, 21, iz + 1);
+    var d = Scatter(ix + 1, 21, iz + 1);
+    var top = a + (b - a) * tx;
+    var bottom = c + (d - c) * tx;
+
+    return (top + (bottom - top) * tz) * 2f - 1f;
+  }
+
+  bool IsGiantLeaf(int x, int y, int z)
+  {
+    return IsCanopyLeaf(x, y, z, CanopyLump(x, z));
+  }
+
+  /// <summary>Whether a voxel is in one of the discs of leaves; <paramref name="lump"/> is <see cref="CanopyLump"/> of its column (computed once per column by the placer).</summary>
+  public bool IsCanopyLeaf(int x, int y, int z, float lump)
+  {
+    var dx = x - CentreX;
+    var dz = z - CentreZ;
+    var horizontal = dx * dx + dz * dz;
+
+    for (int tier = 0; tier < Tiers; tier++)
+    {
+      var radius = CanopyRadius * TierScale[tier] * (1f + 0.17f * lump);
+      var thickness = LeafThickness(radius);
+      var dy = y - (BaseY + TrunkHeight * TierHeight[tier]);
+
+      if (Math.Abs(dy) > thickness)
+      {
+        continue;
+      }
+
+      // A flat, lumpy disc: ragged at the edge so it does not read as a perfect lens, with the odd hole in it.
+      var edge = 1f + 0.26f * (Scatter(x, y, z) - 0.5f);
+
+      if (horizontal / (radius * radius) + dy * dy / (thickness * thickness) <= edge && Scatter(x * 3 + 1, y, z * 3 + 2) > 0.012f)
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  static float Scatter(int x, int y, int z)
+  {
+    unchecked
+    {
+      var h = (uint)x * 73856093u ^ (uint)y * 19349663u ^ (uint)z * 83492791u;
+
+      h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+
+      return (h & 0xffff) / 65535f;
+    }
+  }
+
   public bool IsLeaf(int x, int y, int z)
   {
+    if (Kind == TreeKind.Giant)
+    {
+      return IsGiantLeaf(x, y, z);
+    }
+
     switch (Kind)
     {
       case TreeKind.Cactus:
@@ -190,12 +359,18 @@ public sealed class TreeFeature
   readonly Func<int, int, int> groundHeight;
   readonly Func<int, int, float>? density;
   readonly Func<int, int, TreeKind>? kindAt;
+  readonly Func<int, int, bool>? groundOpen;
+  readonly Func<int, int, float>? giantDensity;
 
   /// <param name="groundHeight">Terrain height (voxels in the column) at a world column.</param>
   /// <param name="density">Chance 0 to 1 of a tree in a cell, by the world column picked for it (null = a fixed 0.3).</param>
   /// <param name="kindAt">Which kind of tree grows at a world column (null = oak everywhere).</param>
-  public TreeFeature(int seed, Func<int, int, int> groundHeight, Func<int, int, float>? density = null, Func<int, int, TreeKind>? kindAt = null)
+  /// <param name="groundOpen">Whether a cave opens through the ground at a world column (a tree must not take root there: its trunk would hang in the air). Null = never.</param>
+  /// <param name="giantDensity">Chance 0 to 1 of a giant tree in a giant cell, by the world column picked for it (null = no giants).</param>
+  public TreeFeature(int seed, Func<int, int, int> groundHeight, Func<int, int, float>? density = null, Func<int, int, TreeKind>? kindAt = null, Func<int, int, bool>? groundOpen = null, Func<int, int, float>? giantDensity = null)
   {
+    this.giantDensity = giantDensity;
+    this.groundOpen = groundOpen;
     this.seed = seed;
     this.groundHeight = groundHeight;
     this.density = density;
@@ -222,6 +397,21 @@ public sealed class TreeFeature
     if ((h & 0xffff) / 65535f > (density?.Invoke(x, z) ?? Density))
     {
       return false;
+    }
+
+    // No tree where a cave breaks through the ground under the trunk (or right beside it): it would stand on nothing.
+    if (groundOpen != null)
+    {
+      for (int dz = -1; dz < 4; dz++)
+      {
+        for (int dx = -1; dx < 4; dx++)
+        {
+          if (groundOpen(x + dx, z + dz))
+          {
+            return false;
+          }
+        }
+      }
     }
 
     // The lowest ground under the widest trunk, so the trunk never hangs in the air.
@@ -291,6 +481,129 @@ public sealed class TreeFeature
     return true;
   }
 
+  /// <summary>Edge of a placement cell of the giants, in voxels (16 m): about twice as many as with 44-voxel cells.</summary>
+  public const int GiantCell = 22;
+
+  /// <summary>The widest a giant reaches from its root column: tier radius plus trunk, with room to spare.</summary>
+  public const int GiantReach = 100;
+
+  /// <summary>Giants keep this far from the world origin (their canopies are wide, the spawn must stay in the open).</summary>
+  const int GiantSpawnClearing = 70;
+
+  /// <summary>Trunks of two giants keep at least this far apart, in voxels (a trunk is up to 12 thick at the roots).</summary>
+  const int GiantSeparation = 16;
+
+  /// <summary>Where a giant cell would put a giant, and its priority, if the biome and the density allow one (before the ground is checked).</summary>
+  bool GiantCandidate(int cellX, int cellZ, out int x, out int z, out uint priority)
+  {
+    var h = Hash(cellX, cellZ, 31);
+    var span = GiantCell - 2 * 4;
+
+    x = cellX * GiantCell + 4 + (int)((h >> 12) % (uint)span);
+    z = cellZ * GiantCell + 4 + (int)(Hash(cellX, cellZ, 33) % (uint)span);
+    priority = Hash(cellX, cellZ, 34);
+
+    if (giantDensity == null || x * x + z * z < GiantSpawnClearing * GiantSpawnClearing)
+    {
+      return false;
+    }
+
+    var chance = giantDensity(x, z);
+
+    return chance > 0f && (h & 0xffff) / 65535f <= chance;
+  }
+
+  /// <summary>The giant rooted in a giant cell, if any: only on level, solid ground (a trunk this thick cannot stand on a slope or a cave mouth).</summary>
+  public bool TryGetGiant(int cellX, int cellZ, out Tree tree)
+  {
+    tree = default;
+
+    if (giantDensity == null)
+    {
+      return false;
+    }
+
+    var variation = Hash(cellX, cellZ, 32);
+
+    if (!GiantCandidate(cellX, cellZ, out var x, out var z, out var priority))
+    {
+      return false;
+    }
+
+    // Two trunks must not grow into each other: of two candidates closer than GiantSeparation, the one with the lower priority gives way.
+    for (int dz = -1; dz <= 1; dz++)
+    {
+      for (int dx = -1; dx <= 1; dx++)
+      {
+        if ((dx != 0 || dz != 0) && GiantCandidate(cellX + dx, cellZ + dz, out var ox, out var oz, out var otherPriority)
+          && (ox - x) * (ox - x) + (oz - z) * (oz - z) < GiantSeparation * GiantSeparation
+          && (otherPriority > priority || (otherPriority == priority && (dz < 0 || (dz == 0 && dx < 0)))))
+        {
+          return false;
+        }
+      }
+    }
+
+    var width = 9 + (int)(variation % 4);
+    var half = width / 2 + 3;
+    var low = int.MaxValue;
+    var high = int.MinValue;
+
+    // Level, solid ground under the whole foot of the tree.
+    for (int dz = -half; dz <= half + 1; dz += 3)
+    {
+      for (int dx = -half; dx <= half + 1; dx += 3)
+      {
+        var ground = groundHeight(x + dx, z + dz);
+
+        low = Math.Min(low, ground);
+        high = Math.Max(high, ground);
+
+        if (groundOpen != null && groundOpen(x + dx, z + dz))
+        {
+          return false;
+        }
+      }
+    }
+
+    if (high - low > 3)
+    {
+      return false;
+    }
+
+    var height = 160 + (int)((variation >> 4) % 60);   // 80 to 110 m
+    var canopy = 36 + (int)((variation >> 10) % 13);   // tiers up to 48 voxels (24 m) in radius, wider than the spacing: neighbouring canopies merge
+
+    tree = new Tree(x, z, low - 3, height, canopy, TreeKind.Giant, 0, width, (int)((variation >> 16) % 3));
+
+    return true;
+  }
+
+  /// <summary>Calls <paramref name="visit"/> for every giant that can touch the voxel columns minX..maxX, minZ..maxZ (in a fixed order).</summary>
+  public void ForGiantsNear(int minX, int minZ, int maxX, int maxZ, Action<Tree> visit)
+  {
+    if (giantDensity == null)
+    {
+      return;
+    }
+
+    var c0x = VoxelMath.FloorDiv(minX - GiantReach, GiantCell);
+    var c1x = VoxelMath.FloorDiv(maxX + GiantReach, GiantCell);
+    var c0z = VoxelMath.FloorDiv(minZ - GiantReach, GiantCell);
+    var c1z = VoxelMath.FloorDiv(maxZ + GiantReach, GiantCell);
+
+    for (int cz = c0z; cz <= c1z; cz++)
+    {
+      for (int cx = c0x; cx <= c1x; cx++)
+      {
+        if (TryGetGiant(cx, cz, out var tree))
+        {
+          visit(tree);
+        }
+      }
+    }
+  }
+
   /// <summary>Calls <paramref name="visit"/> for every tree that can touch the voxel columns minX..maxX, minZ..maxZ (in a fixed order).</summary>
   public void ForTreesNear(int minX, int minZ, int maxX, int maxZ, Action<Tree> visit)
   {
@@ -317,6 +630,7 @@ public sealed class TreeFeature
     var top = 0;
 
     ForTreesNear(x, z, x, z, tree => top = Math.Max(top, tree.TopInColumn(x, z)));
+    ForGiantsNear(x, z, x, z, tree => top = Math.Max(top, tree.TopInColumn(x, z)));
 
     return top;
   }

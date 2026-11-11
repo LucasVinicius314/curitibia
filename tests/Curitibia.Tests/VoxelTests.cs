@@ -324,7 +324,7 @@ public class TreeTests
   public void Whole_trees_appear_even_when_they_cross_chunk_borders()
   {
     var generator = Generator();
-    var feature = new TreeFeature(Seed, generator.ColumnHeight, generator.TreeDensityAt, generator.TreeKindAt);
+    var feature = new TreeFeature(Seed, generator.ColumnHeight, generator.TreeDensityAt, generator.TreeKindAt, new CaveCarver(Seed).IsMouth, generator.GiantDensityAt);
     var chunks = new System.Collections.Generic.Dictionary<(int, int), ChunkData>();
 
     byte At(int wx, int y, int wz)
@@ -360,7 +360,15 @@ public class TreeTests
           {
             if (tree.IsTrunk(x, y, z))
             {
-              Assert.Equal(tree.TrunkBlock, At(x, y, z));
+              // (in the Titan Grove a giant's limb or a dead log may be wood of another kind in the same place)
+              if (generator.GiantDensityAt(tree.X, tree.Z) > 0f)
+              {
+                Assert.True(At(x, y, z) is BlockIds.Wood or BlockIds.BirchWood);
+              }
+              else
+              {
+                Assert.Equal(tree.TrunkBlock, At(x, y, z));
+              }
             }
             else if (tree.IsLeaf(x, y, z))
             {
@@ -420,7 +428,7 @@ public class TreeTests
   }
 
   [Fact]
-  public void A_section_with_two_kinds_of_block_is_a_small_mask_and_with_three_a_full_array()
+  public void A_section_with_two_kinds_of_block_is_a_small_mask_and_with_three_an_array_that_compacts_to_a_palette()
   {
     var chunk = new ChunkData();
     chunk.FillSection(10, BlockIds.Stone);
@@ -441,7 +449,9 @@ public class TreeTests
     Assert.Equal(BlockIds.Stone, chunk.Get(4, 173, 4)); // what the mask held survived the change
 
     chunk.Compact();
-    Assert.Equal(expanded, chunk.Bytes); // three kinds: it stays a full array
+    Assert.True(chunk.Bytes <= 4096); // three kinds: a 2-bit palette, a quarter of the array
+    Assert.Equal(BlockIds.Magma, chunk.Get(3, 172, 3));
+    Assert.Equal(BlockIds.Air, chunk.Get(1, 170, 1));
   }
 
   [Fact]

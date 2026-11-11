@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Curitibia.Core;
+using Curitibia.Items;
 using Curitibia.World;
 using Godot;
 using P2PSignaling;
@@ -76,6 +77,9 @@ public partial class NetSession : Node
   public event Action<int>? PeerGone;
 
   /// <summary>Set by the world: where a peer's player is (for validating its edit requests), null when unknown.</summary>
+  /// <summary>The id of the item a peer's player holds (replicated to the host), for validating what it does with it.</summary>
+  public Func<int, int>? HeldItemProvider { get; set; }
+
   public Func<int, Vector3?>? PlayerPositionProvider { get; set; }
 
   P2PLobby? lobby;
@@ -90,6 +94,7 @@ public partial class NetSession : Node
   readonly Dictionary<int, string> roster = new();
   readonly HashSet<int> synced = new();
   readonly Dictionary<int, (double second, int count)> editRate = new();
+  readonly Dictionary<int, ulong> hitTimes = new();
 
   public override void _EnterTree()
   {
@@ -313,11 +318,13 @@ public partial class NetSession : Node
 
   void ResetState()
   {
+    DayNight.StopFollowingHost();
     Kind = SessionKind.Solo;
     RoomCode = null;
     names.Clear();
     synced.Clear();
     editRate.Clear();
+    hitTimes.Clear();
     roster.Clear();
     pings.Clear();
     lastPing = -1;
@@ -325,7 +332,9 @@ public partial class NetSession : Node
     if (terrain != null)
     {
       terrain.BlockChanged -= OnHostBlockChanged;
+      terrain.CrackChanged -= OnHostCrackChanged;
       terrain.EditRouter = null;
+      terrain.HitRouter = null;
       terrain = null;
     }
   }
@@ -340,11 +349,14 @@ public partial class NetSession : Node
     if (Kind == SessionKind.Client)
     {
       terrain.EditRouter = (voxel, id) => RpcId(1, MethodName.RpcRequestSetBlock, voxel, id);
+      terrain.HitRouter = voxel => RpcId(1, MethodName.RpcRequestHit, voxel);
     }
     else
     {
       terrain.EditRouter = null;
+      terrain.HitRouter = null;
       terrain.BlockChanged += OnHostBlockChanged;
+      terrain.CrackChanged += OnHostCrackChanged;
     }
   }
 
@@ -355,6 +367,14 @@ public partial class NetSession : Node
       terrain.BlockChanged -= OnHostBlockChanged;
       terrain.EditRouter = null;
       terrain = null;
+    }
+  }
+
+  void OnHostCrackChanged(Vector3I voxel, int stage)
+  {
+    foreach (var peer in synced)
+    {
+      RpcId(peer, MethodName.RpcCrack, voxel, stage);
     }
   }
 
@@ -408,6 +428,7 @@ public partial class NetSession : Node
     foreach (var peer in synced)
     {
       RpcId(peer, MethodName.RpcPings, wire);
+      RpcId(peer, MethodName.RpcTimeOfDay, DayNight.TimeOfDay, GameSettings.DayNightCycle);
     }
   }
 
@@ -437,6 +458,7 @@ public partial class NetSession : Node
 
     names.Remove(peer);
     editRate.Remove(peer);
+    hitTimes.Remove(peer);
 
     if (synced.Remove(peer))
     {
@@ -553,10 +575,66 @@ public partial class NetSession : Node
       return;
     }
 
+    // A break needs a tool that mines and is strong enough for the block (what the sender holds is replicated to the host).
+    if (id == BlockIds.Air)
+    {
+      var tool = ItemRegistry.Get(HeldItemProvider?.Invoke(sender) ?? 0)?.Behavior;
+      var power = tool is { MiningSpeed: > 0f } ? tool.MiningPower : -1;
+
+      if (power < BlockIds.RequiredPower(terrain.GetBlock(voxel.X, voxel.Y, voxel.Z)))
+      {
+        return;
+      }
+    }
+
     terrain.ApplyEdit(voxel, id); // BlockChanged then broadcasts it
   }
 
+  /// <summary>A client swung its tool at a block: the host checks it and deals the damage of the tool the client holds (never a number the client sent).</summary>
+  [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcRequestHit(Vector3I voxel)
+  {
+    if (!Multiplayer.IsServer() || terrain == null)
+    {
+      return;
+    }
+
+    var sender = Multiplayer.GetRemoteSenderId();
+
+    if (!synced.Contains(sender) || !VoxelMath.InWorldHeight(voxel.Y))
+    {
+      return;
+    }
+
+    var tool = ItemRegistry.Get(HeldItemProvider?.Invoke(sender) ?? 0)?.Behavior;
+    var position = PlayerPositionProvider?.Invoke(sender);
+
+    if (tool is not { MiningSpeed: > 0f } || position == null
+      || position.Value.DistanceTo(new Vector3(VoxelMath.VoxelCenter(voxel.X), VoxelMath.VoxelCenter(voxel.Y), VoxelMath.VoxelCenter(voxel.Z))) > MaxEditDistance)
+    {
+      return;
+    }
+
+    // Not faster than the tool swings (with a little slack for network jitter).
+    var now = Time.GetTicksMsec();
+
+    if (hitTimes.TryGetValue(sender, out var last) && now - last < tool.IntervalAfter(true) * 600f)
+    {
+      return;
+    }
+
+    hitTimes[sender] = now;
+    terrain.HostHit(voxel, tool.MiningPower, tool.MiningDamage);
+  }
+
   // ------------------------------------------------------------------ RPCs: host to client (Authority mode)
+
+  /// <summary>The cracks of a block the host damaged (stage 1 to 10; 0 = gone), drawn by every client.</summary>
+  [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcCrack(Vector3I voxel, int stage)
+  {
+    terrain?.ShowCrack(voxel, stage);
+  }
 
   [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
   void RpcWelcome(int seed)
@@ -632,6 +710,13 @@ public partial class NetSession : Node
     {
       pings[own] = mine; // our own measurement is fresher than what the host last heard
     }
+  }
+
+  /// <summary>The host's time of day, so every peer shows the same sky (the system clocks of the machines need not agree).</summary>
+  [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+  void RpcTimeOfDay(float timeOfDay, bool cycle)
+  {
+    DayNight.FollowHost(timeOfDay, cycle);
   }
 
   [Rpc(TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

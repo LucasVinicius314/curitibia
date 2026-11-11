@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://src/Enemies/EnemySpawner.cs" id="6"]
 [ext_resource type="PackedScene" path="res://prefabs/enemy.tscn" id="7"]
 [ext_resource type="Script" path="res://src/Combat/ProjectileSpawner.cs" id="8"]
+[ext_resource type="Script" path="res://src/Items/DropSpawner.cs" id="drops"]
 [ext_resource type="PackedScene" path="res://prefabs/projectile.tscn" id="9"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
@@ -67,5 +68,11 @@ EnemyScene = ExtResource("7")
 spawn_path = NodePath("../Projectiles")
 script = ExtResource("8")
 ProjectileScene = ExtResource("9")
+
+[node name="Drops" type="Node3D" parent="."]
+
+[node name="DropSpawner" type="MultiplayerSpawner" parent="."]
+spawn_path = NodePath("../Drops")
+script = ExtResource("drops")
 
 [node name="Hud" parent="." instance=ExtResource("5")]

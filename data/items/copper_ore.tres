@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://src/Items/ItemDef.cs" id="1"]
+[ext_resource type="Script" path="res://src/Items/PlaceBlockBehavior.cs" id="2"]
+[ext_resource type="Script" path="res://src/Items/BlockItemModel.cs" id="3"]
+
+[sub_resource type="Resource" id="Resource_behavior"]
+script = ExtResource("2")
+BlockId = 15
+Cooldown = 0.0
+MiningPower = 0
+MiningSpeed = 2.0
+MiningDamage = 4.0
+
+[sub_resource type="Resource" id="Resource_model"]
+script = ExtResource("3")
+BlockId = 15
+RestPitchDegrees = 0.0
+SwingAmount = 0.3
+IconRotationDegrees = Vector3(-30, 45, 0)
+
+[resource]
+script = ExtResource("1")
+NetId = 15
+DisplayName = "Copper ore"
+MaxStack = 999
+Infinite = false
+Behavior = SubResource("Resource_behavior")
+Model = SubResource("Resource_model")

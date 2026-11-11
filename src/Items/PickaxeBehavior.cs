@@ -3,8 +3,9 @@ using Godot;
 namespace Curitibia.Items;
 
 /// <summary>
-/// Breaks the targeted block over and over while the primary button is held, one block per Cooldown. It breaks anything,
-/// like the creative-style block tools; a later version can add hardness and tiers. Announced, so everyone sees the swings.
+/// A mining tool, as in Terraria: MiningPower says which blocks it can break at all, MiningSpeed how many times a second it
+/// swings while the primary button is held, MiningDamage how much each swing takes off the block's durability. Announced, so
+/// everyone sees the swings.
 /// </summary>
 [GlobalClass]
 public partial class PickaxeBehavior : ItemBehavior
@@ -19,7 +20,8 @@ public partial class PickaxeBehavior : ItemBehavior
   {
     if (primary)
     {
-      context.Player.Interactor.BreakTarget();
+      context.Player.Interactor.Hit(MiningPower, MiningDamage);
     }
   }
+
 }

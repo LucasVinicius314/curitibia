@@ -25,8 +25,14 @@ public static class TextureAtlas
     "res://assets/textures/birch_leaves.png", // tile 10 (BlockIds.BirchLeaves)
     "res://assets/textures/hellrock.png", // tile 11 (BlockIds.Hellrock)
     "res://assets/textures/magma.png", // tile 12 (BlockIds.Magma)
-    "res://assets/textures/tall_grass.png", // tile 13: the grass tuft (BlockIds.TuftTile), transparent around the blades
-    "res://assets/textures/void.png", // tile 14: the void, for the faces that close the meshing window (the last tile)
+    "res://assets/textures/copper_ore.png", // tile 13 (BlockIds.CopperOre)
+    "res://assets/textures/tin_ore.png", // tile 14
+    "res://assets/textures/iron_ore.png", // tile 15
+    "res://assets/textures/silver_ore.png", // tile 16
+    "res://assets/textures/gold_ore.png", // tile 17
+    "res://assets/textures/platinum_ore.png", // tile 18 (BlockIds.PlatinumOre)
+    "res://assets/textures/tall_grass.png", // tile 19: the grass tuft (BlockIds.TuftTile), transparent around the blades
+    "res://assets/textures/void.png", // tile 20: the void, for the faces that close the meshing window (the last tile)
   };
 
   static StandardMaterial3D? material;
@@ -59,6 +65,7 @@ public static class TextureAtlas
       AlbedoTexture = ImageTexture.CreateFromImage(atlas),
       TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
       Roughness = 1f,
+      VertexColorUseAsAlbedo = true, // the biome tints of grass and leaves (blocks that are not tinted have white vertices)
       TextureRepeat = false,
       Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor, // the grass tufts are cut out; every block tile is opaque
       AlphaScissorThreshold = 0.5f,

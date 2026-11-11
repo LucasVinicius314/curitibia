@@ -13,14 +13,32 @@ public static class ItemRegistry
   {
     "res://data/items/copper_sword.tres",
     "res://data/items/copper_pickaxe.tres",
+    "res://data/items/iron_pickaxe.tres",
+    "res://data/items/gold_pickaxe.tres",
+    "res://data/items/platinum_pickaxe.tres",
     "res://data/items/stone.tres",
     "res://data/items/grass.tres",
     "res://data/items/wood.tres",
     "res://data/items/leaves.tres",
+    "res://data/items/dirt.tres",
+    "res://data/items/sand.tres",
+    "res://data/items/snow.tres",
+    "res://data/items/cactus.tres",
+    "res://data/items/pine_leaves.tres",
+    "res://data/items/birch_log.tres",
+    "res://data/items/birch_leaves.tres",
+    "res://data/items/hellrock.tres",
+    "res://data/items/copper_ore.tres",
+    "res://data/items/tin_ore.tres",
+    "res://data/items/iron_ore.tres",
+    "res://data/items/silver_ore.tres",
+    "res://data/items/gold_ore.tres",
+    "res://data/items/platinum_ore.tres",
   };
 
   static List<ItemDef>? all;
   static Dictionary<int, ItemDef>? byId;
+  static Dictionary<int, ItemDef>? byBlock;
 
   public static IReadOnlyList<ItemDef> All
   {
@@ -40,6 +58,14 @@ public static class ItemRegistry
     return byId!.TryGetValue(netId, out var def) ? def : null;
   }
 
+  /// <summary>The item that places a block (what breaking that block drops), or null when there is none.</summary>
+  public static ItemDef? ForBlock(byte block)
+  {
+    Load();
+
+    return byBlock!.TryGetValue(block, out var def) ? def : null;
+  }
+
   static void Load()
   {
     if (all != null)
@@ -49,6 +75,7 @@ public static class ItemRegistry
 
     all = new List<ItemDef>();
     byId = new Dictionary<int, ItemDef>();
+    byBlock = new Dictionary<int, ItemDef>();
 
     foreach (var path in Paths)
     {
@@ -62,6 +89,11 @@ public static class ItemRegistry
 
       all.Add(def);
       byId[def.NetId] = def;
+
+      if (def.Behavior is PlaceBlockBehavior place)
+      {
+        byBlock[place.BlockId] = def;
+      }
     }
   }
 }

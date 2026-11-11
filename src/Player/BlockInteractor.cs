@@ -7,8 +7,8 @@ namespace Curitibia.Player;
 /// <summary>
 /// Targeting for block tools: a voxel ray walk from the eye along the camera (no physics needed, and it gives the face
 /// normal for free) and a translucent highlight on the targeted voxel while the held item wants it. It does no input:
-/// the held item's behavior calls BreakTarget / PlaceTarget, which go through Terrain.RequestSetBlock, where the network
-/// decides who applies the edit.
+/// the held item's behavior calls Hit / PlaceTarget, which go through Terrain.RequestHit / RequestSetBlock, where the network
+/// decides who applies them.
 /// </summary>
 public partial class BlockInteractor : Node
 {
@@ -78,29 +78,37 @@ public partial class BlockInteractor : Node
     }
   }
 
-  /// <summary>Breaks the voxel under the crosshair, if any.</summary>
-  public void BreakTarget()
+  /// <summary>
+  /// One swing at the block under the crosshair with a tool of this power that deals this much damage. The damage belongs to the
+  /// block and is kept by the world (the host, which tells everyone the cracks and breaks the block when it is spent): this only
+  /// asks. A tool too weak for the block does nothing to it.
+  /// </summary>
+  public void Hit(int power, float damage)
   {
     if (hasTarget)
     {
-      Terrain.Instance?.RequestSetBlock(targetVoxel, BlockIds.Air);
+      Terrain.Instance?.RequestHit(targetVoxel, power, damage);
     }
   }
 
-  /// <summary>Places a block against the face under the crosshair, unless it would overlap the player.</summary>
-  public void PlaceTarget(byte block)
+  /// <summary>Places a block against the face under the crosshair, unless it would overlap the player; false when nothing was placed.</summary>
+  public bool PlaceTarget(byte block)
   {
     if (!hasTarget || targetNormal == Vector3I.Zero)
     {
-      return;
+      return false;
     }
 
     var target = targetVoxel + targetNormal;
 
-    if (VoxelMath.InWorldHeight(target.Y) && !OverlapsPlayer(target))
+    if (!VoxelMath.InWorldHeight(target.Y) || OverlapsPlayer(target))
     {
-      Terrain.Instance?.RequestSetBlock(target, block);
+      return false;
     }
+
+    Terrain.Instance?.RequestSetBlock(target, block);
+
+    return true;
   }
 
   bool TryTarget(Terrain terrain, out Vector3I voxel, out Vector3I normal)

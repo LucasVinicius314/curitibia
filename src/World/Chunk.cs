@@ -10,6 +10,7 @@ public sealed class ChunkBuild
   public Vector3[] Vertices = System.Array.Empty<Vector3>();
   public Vector3[] Normals = System.Array.Empty<Vector3>();
   public Vector2[] Uvs = System.Array.Empty<Vector2>();
+  public Color[] Colors = System.Array.Empty<Color>();
   public int[] Indices = System.Array.Empty<int>();
   public Vector3[] CollisionFaces = System.Array.Empty<Vector3>();
 
@@ -27,6 +28,16 @@ public sealed class ChunkBuild
       Uvs = MemoryMarshal.Cast<float, Vector2>(data.Uvs).ToArray(),
       Indices = data.Indices,
     };
+
+    if (data.Colors.Length > 0)
+    {
+      build.Colors = new Color[data.Colors.Length / 4];
+
+      for (int i = 0; i < build.Colors.Length; i++)
+      {
+        build.Colors[i] = new Color(data.Colors[i * 4] / 255f, data.Colors[i * 4 + 1] / 255f, data.Colors[i * 4 + 2] / 255f);
+      }
+    }
 
     // The mesher works in voxel units; the world is built from half-metre blocks.
     for (int i = 0; i < build.Vertices.Length; i++)
@@ -105,6 +116,12 @@ public partial class Chunk : Node3D
     arrays[(int)Mesh.ArrayType.Vertex] = build.Vertices;
     arrays[(int)Mesh.ArrayType.Normal] = build.Normals;
     arrays[(int)Mesh.ArrayType.TexUV] = build.Uvs;
+
+    if (build.Colors.Length == build.Vertices.Length)
+    {
+      arrays[(int)Mesh.ArrayType.Color] = build.Colors;
+    }
+
     arrays[(int)Mesh.ArrayType.Index] = build.Indices;
 
     var mesh = new ArrayMesh();

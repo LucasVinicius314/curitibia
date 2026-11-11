@@ -101,6 +101,12 @@ public partial class EnemySpawner : MultiplayerSpawner
     var distance = random.RandfRange(MinSpawnDistance, MaxSpawnDistance);
     var wx = VoxelMath.WorldToVoxel(player.GlobalPosition.X + MathF.Cos(angle) * distance);
     var wz = VoxelMath.WorldToVoxel(player.GlobalPosition.Z + MathF.Sin(angle) * distance);
+    // Not on top of a giant tree (its canopy is tens of metres above anyone who could be in reach).
+    if (terrain.SurfaceHeightAt(wx, wz) - terrain.GroundHeightAt(wx, wz) > 12f)
+    {
+      return;
+    }
+
     var position = new Vector3(VoxelMath.VoxelCenter(wx), terrain.SurfaceHeightAt(wx, wz) + 1f, VoxelMath.VoxelCenter(wz));
 
     // The ground must exist there (its chunk is meshed with collision) and no player may be able to see the spot appear.

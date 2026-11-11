@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="ItemDef" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://src/Items/ItemDef.cs" id="1"]
+[ext_resource type="Script" path="res://src/Items/PickaxeBehavior.cs" id="2"]
+[ext_resource type="Script" path="res://src/Items/PickaxeItemModel.cs" id="3"]
+
+[sub_resource type="Resource" id="Resource_behavior"]
+script = ExtResource("2")
+Cooldown = 0.3
+MiningPower = 2
+MiningSpeed = 3.5
+MiningDamage = 14.0
+
+[sub_resource type="Resource" id="Resource_model"]
+script = ExtResource("3")
+RestPitchDegrees = 75.0
+RestRollDegrees = 0.0
+Swing = 1
+SwingAmount = 1.0
+IconRotationDegrees = Vector3(45, -90, 0)
+HeadColor = Color(0.66, 0.68, 0.72, 1)
+
+[resource]
+script = ExtResource("1")
+NetId = 21
+DisplayName = "Iron Pickaxe"
+MaxStack = 1
+Infinite = false
+Behavior = SubResource("Resource_behavior")
+Model = SubResource("Resource_model")

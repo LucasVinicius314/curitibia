@@ -61,7 +61,7 @@ public partial class ItemUser : Node
       return;
     }
 
-    localReadyAt = now + behavior.Cooldown;
+    localReadyAt = now + behavior.IntervalAfter(primary);
 
     behavior.OwnerUse(Context, primary);
 
@@ -96,7 +96,7 @@ public partial class ItemUser : Node
       return;
     }
 
-    hostReadyAtMsec = now + (ulong)(behavior.Cooldown * 900f); // a little slack for network jitter
+    hostReadyAtMsec = now + (ulong)(behavior.IntervalAfter(primary) * 900f); // a little slack for network jitter
 
     if (behavior.HitDelay <= 0f)
     {

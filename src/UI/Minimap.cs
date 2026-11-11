@@ -30,7 +30,7 @@ public partial class MinimapPanel : VBoxContainer
     SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight);
     OffsetLeft = -(ViewSize + 16f);
     OffsetRight = -16f;
-    OffsetTop = 44f;
+    OffsetTop = 16f;
     AddThemeConstantOverride("separation", 3);
 
     view = new Minimap { CustomMinimumSize = new Vector2(ViewSize, ViewSize) };

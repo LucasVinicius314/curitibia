@@ -23,7 +23,6 @@ public partial class Hud : CanvasLayer
   [Export] public Label InfoLabel { get; set; } = null!;
   [Export] public Label BlockLabel { get; set; } = null!;
   [Export] public Label BannerLabel { get; set; } = null!;
-  [Export] public Label RoomLabel { get; set; } = null!;
 
   readonly Dictionary<int, (Label hp, Label ping)> rosterRowsByPeer = new();
   readonly Dictionary<int, (Label hp, Label ping)> pauseRowsByPeer = new();
@@ -226,7 +225,7 @@ public partial class Hud : CanvasLayer
     rosterPanel = new PanelContainer { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
     rosterPanel.SetAnchorsPreset(Control.LayoutPreset.TopRight);
     rosterPanel.GrowHorizontal = Control.GrowDirection.Begin;
-    rosterPanel.OffsetTop = 244f; // below the minimap
+    rosterPanel.OffsetTop = 216f; // below the minimap
     rosterPanel.OffsetRight = -16f;
     rosterPanel.CustomMinimumSize = new Vector2(280f, 0f);
 
@@ -487,10 +486,6 @@ public partial class Hud : CanvasLayer
 
     var chunks = Terrain.Instance?.LoadedChunkCount ?? 0;
     InfoLabel.Text = $"FPS {Engine.GetFramesPerSecond()}  UPS {physicsPerSecond}  chunks {chunks}{PingText()}{ModeText()}\n{PerformanceText()}\n{UpdateRegion(hasPlayer)}";
-
-    var code = session.RoomCode;
-    var idle = session.IsOnline ? "Online" : "Solo";
-    RoomLabel.Text = code != null ? $"Room {code}" : idle;
 
     UpdateRows(rosterRowsByPeer);
     UpdateRows(pauseRowsByPeer);

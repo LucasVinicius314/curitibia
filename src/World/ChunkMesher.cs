@@ -10,6 +10,9 @@ public sealed class MeshData
   public float[] Positions = Array.Empty<float>();
   public float[] Normals = Array.Empty<float>();
   public float[] Uvs = Array.Empty<float>();
+
+  /// <summary>Per-vertex colour (RGBA bytes, four per vertex) that tints grass and leaves by biome; empty when the mesh was built without tints.</summary>
+  public byte[] Colors = Array.Empty<byte>();
   public int[] Indices = Array.Empty<int>();
 
   /// <summary>
@@ -75,15 +78,42 @@ public static class ChunkMesher
   /// <param name="uvInset">UV inset per tile edge (fraction of the whole atlas width) to avoid bleeding between tiles.</param>
   /// <param name="floorLayer">Only layers from here up are meshed (a multiple of the section height); nothing is drawn across the cut. A deep world is only drawn where somebody can see.</param>
   /// <param name="collision">Also build the merged collision rectangles (<see cref="MeshData.CollisionTriangles"/>).</param>
+  /// <param name="grassTint">RGB bytes (three per column, index x + z * 32) that multiply the colour of grass blocks and grass plants of this chunk (null = no tint).</param>
+  /// <param name="foliageTint">The same for leaves.</param>
   /// <param name="ceilingLayer">Only layers below this are meshed (a multiple of the section height, or the world height for no cut).</param>
-  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true, int chunkX = 0, int chunkZ = 0)
+  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true, int chunkX = 0, int chunkZ = 0, byte[]? grassTint = null, byte[]? foliageTint = null)
   {
     var positions = new List<float>(4096);
     var normals = new List<float>(4096);
     var uvs = new List<float>(4096);
     var indices = new List<int>(4096);
+    var colors = grassTint != null || foliageTint != null ? new List<byte>(4096) : null;
 
-    void AddFace(int x, int y, int z, int f, int faceTile)
+    // The tint of a block in a column of this chunk (white for anything that is not grass or leaves).
+    void AddColor(byte id, int x, int z)
+    {
+      if (colors == null)
+      {
+        return;
+      }
+
+      var tint = id is BlockIds.Grass or BlockIds.ShortGrass or BlockIds.TallGrass ? grassTint
+        : id is BlockIds.Leaves or BlockIds.PineLeaves or BlockIds.BirchLeaves ? foliageTint
+        : null;
+
+      if (tint == null)
+      {
+        colors.Add(255); colors.Add(255); colors.Add(255); colors.Add(255);
+
+        return;
+      }
+
+      var i = (x + z * VoxelMath.ChunkSize) * 3;
+
+      colors.Add(tint[i]); colors.Add(tint[i + 1]); colors.Add(tint[i + 2]); colors.Add(255);
+    }
+
+    void AddFace(int x, int y, int z, int f, int faceTile, byte id = 0)
     {
       var face = Faces[f];
       var u0 = (float)faceTile / tileCount + uvInset;
@@ -111,6 +141,7 @@ public static class ChunkMesher
 
         uvs.Add(u0 + s * (u1 - u0));
         uvs.Add(t);
+        AddColor(id, x, z);
       }
 
       // clockwise triangles
@@ -122,12 +153,13 @@ public static class ChunkMesher
       indices.Add(baseVertex + 2);
     }
 
-    void AddTuft(int x, int y, int z, int wx, int wz)
+    void AddTuft(int x, int y, int z, int wx, int wz, bool tall)
     {
+      var plant = tall ? BlockIds.TallGrass : BlockIds.ShortGrass;
       var h = TuftHash(wx, wz);
       var cx = x + 0.2f + (h & 0xff) / 255f * 0.6f;
       var cz = z + 0.2f + ((h >> 8) & 0xff) / 255f * 0.6f;
-      var height = 0.55f + ((h >> 16) & 0xff) / 255f * 0.4f;
+      var height = (0.55f + ((h >> 16) & 0xff) / 255f * 0.4f) * (tall ? 2.6f : 1f);
       var u0 = (float)BlockIds.TuftTile / tileCount + uvInset;
       var u1 = (float)(BlockIds.TuftTile + 1) / tileCount - uvInset;
 
@@ -155,6 +187,7 @@ public static class ChunkMesher
             positions.Add(vx); positions.Add(vy); positions.Add(vz);
             normals.Add(0f); normals.Add(1f); normals.Add(0f);
             uvs.Add(u0 + s * (u1 - u0)); uvs.Add(t);
+            AddColor(plant, x, z);
           }
 
           Vertex(ax, y, az, 0f, 1f);
@@ -218,7 +251,7 @@ public static class ChunkMesher
 
           if (BlockIds.IsPlant(id))
           {
-            AddTuft(x, y, z, chunkX * size + x, chunkZ * size + z);
+            AddTuft(x, y, z, chunkX * size + x, chunkZ * size + z, id == BlockIds.TallGrass);
             continue;
           }
 
@@ -242,7 +275,7 @@ public static class ChunkMesher
               faceTile = bottomTiles[id];
             }
 
-            AddFace(x, y, z, f, faceTile);
+            AddFace(x, y, z, f, faceTile, id);
 
             if (collision)
             {
@@ -284,6 +317,7 @@ public static class ChunkMesher
       Positions = positions.ToArray(),
       Normals = normals.ToArray(),
       Uvs = uvs.ToArray(),
+      Colors = colors?.ToArray() ?? Array.Empty<byte>(),
       Indices = indices.ToArray(),
       CollisionTriangles = collisionTriangles,
     };

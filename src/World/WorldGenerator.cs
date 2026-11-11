@@ -72,6 +72,7 @@ public sealed class WorldGenerator
   readonly System.Threading.ThreadLocal<System.Collections.Generic.Dictionary<long, float[]>> lattice =
     new(() => new System.Collections.Generic.Dictionary<long, float[]>());
   readonly TreeFeature trees;
+  readonly LogFeature logs;
 
   public WorldGenerator(WorldGenParams p)
   {
@@ -81,7 +82,8 @@ public sealed class WorldGenerator
     biomes = new BiomeMap(p.Seed, p.BiomeFrequency);
     caves = new CaveCarver(p.Seed);
     rockNoise = new GradientNoise(p.Seed + 60013);
-    trees = new TreeFeature(p.Seed, ColumnHeight, TreeDensityAt, TreeKindAt);
+    trees = new TreeFeature(p.Seed, ColumnHeight, TreeDensityAt, TreeKindAt, caves.IsMouth, GiantDensityAt);
+    logs = new LogFeature(p.Seed, ColumnHeight, LogDensityAt, caves.IsMouth);
   }
 
   float[] LatticePoint(int ix, int iz)
@@ -179,6 +181,131 @@ public sealed class WorldGenerator
     return biome.SurfaceAt(column.Height - (int)p.BaseHeight) == BlockIds.Snow && biome.Surface != BlockIds.Snow ? 0f : biome.TreeDensity;
   }
 
+  /// <summary>Chance of a giant tree for a world column: the biome's, only where the ground is the biome's own.</summary>
+  public float GiantDensityAt(int wx, int wz)
+  {
+    return Biomes.Get(Column(wx, wz).SurfaceBiome).GiantDensity;
+  }
+
+  /// <summary>Chance of a dead log for a world column.</summary>
+  public float LogDensityAt(int wx, int wz)
+  {
+    return Biomes.Get(Column(wx, wz).SurfaceBiome).LogDensity;
+  }
+
+  /// <summary>
+  /// The colour multipliers of grass and of leaves for each column of a chunk (RGB bytes, three per column, index x + z * 32): the
+  /// biomes' tints blended by the biome weights, so the colour changes smoothly across a border instead of in a line.
+  /// </summary>
+  public void ColumnTints(int chunkX, int chunkZ, byte[] grass, byte[] foliage)
+  {
+    const int size = VoxelMath.ChunkSize;
+    Span<float> weights = stackalloc float[BiomeMap.Count];
+
+    for (int z = 0; z < size; z++)
+    {
+      for (int x = 0; x < size; x++)
+      {
+        Weigh(chunkX * size + x, chunkZ * size + z, weights, out _);
+
+        float gr = 0f, gg = 0f, gb = 0f, fr = 0f, fg = 0f, fb = 0f, total = 0f;
+
+        // The biome weights are blurred over hundreds of metres and often close to each other; a softmax (temperature 1/40) of them
+        // favours the ruling biome, so a biome's colour is its own in its heartland and still blends across the border.
+        var leader = 0f;
+
+        for (int i = 0; i < weights.Length; i++)
+        {
+          leader = Math.Max(leader, weights[i]);
+        }
+
+        for (int i = 0; i < weights.Length; i++)
+        {
+          var biome = Biomes.All[i];
+          var grassTint = biome.GrassTint ?? Rgb.White;
+          var foliageTint = biome.FoliageTint ?? Rgb.White;
+          var w = MathF.Exp((weights[i] - leader) * 40f);
+
+          total += w;
+          gr += w * grassTint.R; gg += w * grassTint.G; gb += w * grassTint.B;
+          fr += w * foliageTint.R; fg += w * foliageTint.G; fb += w * foliageTint.B;
+        }
+
+        if (total > 1e-9f)
+        {
+          gr /= total; gg /= total; gb /= total; fr /= total; fg /= total; fb /= total;
+        }
+
+        var at = (x + z * size) * 3;
+
+        grass[at] = Channel(gr); grass[at + 1] = Channel(gg); grass[at + 2] = Channel(gb);
+        foliage[at] = Channel(fr); foliage[at + 1] = Channel(fg); foliage[at + 2] = Channel(fb);
+      }
+    }
+  }
+
+  static byte Channel(float multiplier) => (byte)Math.Clamp((int)(multiplier * 255f + 0.5f), 0, 255);
+
+  /// <summary>
+  /// The closest column of a biome to a column, looking outward in square rings on a coarse grid (the smallest patch of a biome is
+  /// hundreds of metres across), preferring a spot well inside it (not on its very edge). Thread-safe; false when there is none within
+  /// about 19 km.
+  /// </summary>
+  public bool FindNearestBiome(int wx, int wz, BiomeId biome, out int foundX, out int foundZ)
+  {
+    const int step = 150;
+    const int maxRing = 260;
+
+    foundX = wx;
+    foundZ = wz;
+
+    for (int ring = 0; ring <= maxRing; ring++)
+    {
+      var hits = new System.Collections.Generic.List<(int x, int z)>();
+
+      for (int dz = -ring; dz <= ring; dz++)
+      {
+        var edge = Math.Abs(dz) == ring;
+
+        for (int dx = -ring; dx <= ring; dx += edge ? 1 : Math.Max(1, 2 * ring))
+        {
+          var x = wx + dx * step;
+          var z = wz + dz * step;
+
+          if (BiomeAt(x, z) == biome)
+          {
+            hits.Add((x, z));
+          }
+        }
+      }
+
+      if (hits.Count == 0)
+      {
+        continue;
+      }
+
+      hits.Sort((a, b) => (((long)a.x - wx) * ((long)a.x - wx) + ((long)a.z - wz) * ((long)a.z - wz)).CompareTo(((long)b.x - wx) * ((long)b.x - wx) + ((long)b.z - wz) * ((long)b.z - wz)));
+
+      var pick = hits[0];
+
+      foreach (var (x, z) in hits)
+      {
+        if (BiomeAt(x + 300, z) == biome && BiomeAt(x - 300, z) == biome && BiomeAt(x, z + 300) == biome && BiomeAt(x, z - 300) == biome)
+        {
+          pick = (x, z);
+          break;
+        }
+      }
+
+      foundX = pick.x;
+      foundZ = pick.z;
+
+      return true;
+    }
+
+    return false;
+  }
+
   /// <summary>Number of solid voxels in the column at world (wx, wz); the top voxel is at height - 1.</summary>
   public int ColumnHeight(int wx, int wz)
   {
@@ -225,7 +352,28 @@ public sealed class WorldGenerator
 
     h += p.ReliefScale * (RampUplift * SmoothStep(0f, RampLead, lead) + CoreUplift * SmoothStep(CoreStart, 1f, rugged));
 
+    // The Titan Grove is cut by narrow, deep trenches, only in its heartland (the cut fades out with the biome's weight).
+    var grove = weights[(int)BiomeId.Grove];
+
+    if (grove > 0.2f)
+    {
+      h -= Biomes.Get(BiomeId.Grove).TrenchDepth * SmoothStep(0.15f, 0.35f, grove) * TrenchProfile(wx, wz);
+    }
+
     return new ColumnInfo(Math.Clamp((int)(p.BaseHeight + h), 1, VoxelMath.ChunkHeight), dominant, SurfaceBiomeOf(wx, wz, weights, dominant));
+  }
+
+  /// <summary>
+  /// 1 in the middle of a trench, 0 beside it: trenches run where a slow noise crosses zero (winding lines, as in a river bed),
+  /// wobbled sideways by a second noise so they are not straight, with steep walls.
+  /// </summary>
+  float TrenchProfile(int wx, int wz)
+  {
+    var warpX = wx + 22f * ridgeNoise.Sample(wx * 0.02f + 40.3f, wz * 0.02f + 13.7f) / 0.7f;
+    var warpZ = wz + 22f * ridgeNoise.Sample(wx * 0.02f + 8.1f, wz * 0.02f + 71.9f) / 0.7f;
+    var line = MathF.Abs(ridgeNoise.Sample(warpX * 0.009f + 31.1f, warpZ * 0.009f + 17.3f) / 0.7f);
+
+    return 1f - SmoothStep(0.05f, 0.1f, line);
   }
 
   /// <summary>The biome whose surface this column gets: the ruling one, or near a border sometimes the strongest neighbour.</summary>
@@ -437,6 +585,10 @@ public sealed class WorldGenerator
     // Trees rooted in this chunk or close enough to reach into it, written only where they fall inside. Wood always wins
     // and leaves only fill air, so the result does not depend on the order neighbouring chunks visit overlapping trees.
     trees.ForTreesNear(x0, z0, x0 + size - 1, z0 + size - 1, tree => PlaceTree(chunk, tree, x0, z0));
+    trees.ForGiantsNear(x0, z0, x0 + size - 1, z0 + size - 1, tree => PlaceTree(chunk, tree, x0, z0));
+    logs.ForLogsNear(x0, z0, x0 + size - 1, z0 + size - 1, log => PlaceLog(chunk, log, x0, z0));
+
+    Features.OreFeature.Place(chunk, p.Seed, cx, cz, tallest - 1);
 
     PlacePlants(chunk, x0, z0, columns);
 
@@ -468,7 +620,15 @@ public sealed class WorldGenerator
 
         hash ^= hash >> 15; hash *= 0x2c1b3c6du; hash ^= hash >> 12; hash *= 0x297a2d39u; hash ^= hash >> 15;
 
-        if ((hash >> 24) < PlantShare)
+        if (Biomes.Get(columns[x + z * size].SurfaceBiome).TallGrass)
+        {
+          // Tall grass nearly everywhere in the grove, with a little short grass among it.
+          if ((hash >> 24) < 205)
+          {
+            chunk.Set(x, h, z, (hash >> 16 & 0xff) < 40 ? BlockIds.ShortGrass : BlockIds.TallGrass);
+          }
+        }
+        else if ((hash >> 24) < PlantShare)
         {
           chunk.Set(x, h, z, BlockIds.ShortGrass);
         }
@@ -476,14 +636,128 @@ public sealed class WorldGenerator
     }
   }
 
-  static void PlaceTree(ChunkData chunk, Tree tree, int x0, int z0)
+  /// <summary>A dead log and its stump, written only where they fall inside the chunk; wood replaces air and plants, never ground.</summary>
+  static void PlaceLog(ChunkData chunk, FallenLog log, int x0, int z0)
   {
     const int size = VoxelMath.ChunkSize;
+    var minX = Math.Max(x0, log.X - log.Reach);
+    var maxX = Math.Min(x0 + size - 1, log.X + log.Reach);
+    var minZ = Math.Max(z0, log.Z - log.Reach);
+    var maxZ = Math.Min(z0 + size - 1, log.Z + log.Reach);
+
+    for (int wz = minZ; wz <= maxZ; wz++)
+    {
+      for (int wx = minX; wx <= maxX; wx++)
+      {
+        for (int y = log.BaseY; y < log.BaseY + Math.Max(log.StumpHeight, log.Thickness); y++)
+        {
+          if (log.IsWood(wx, y, wz) && chunk.Get(wx - x0, y, wz - z0) is BlockIds.Air)
+          {
+            chunk.Set(wx - x0, y, wz - z0, log.Block);
+          }
+        }
+      }
+    }
+  }
+
+  /// <summary>
+  /// A giant: its grown structure (limbs, branches, roots, vines and the foliage on them, see <see cref="GiantStructure"/>), its
+  /// gnarled trunk column by column, and its canopy discs only in their own layers (the rest of the height is air), which keeps a
+  /// 200-voxel tree cheap. Wood always wins and leaves only fill air, like every tree.
+  /// </summary>
+  static void PlaceGiant(ChunkData chunk, Tree tree, int x0, int z0)
+  {
+    const int size = VoxelMath.ChunkSize;
+
+    if (GiantStructure.For(tree).TryGetBucket(VoxelMath.FloorDiv(x0, size), VoxelMath.FloorDiv(z0, size), out var bucket) && bucket != null)
+    {
+      foreach (var packed in bucket.Wood)
+      {
+        chunk.Set(packed & 31, packed >> 10, (packed >> 5) & 31, BlockIds.Wood);
+      }
+    }
+
+    var minX = Math.Max(x0, tree.X - tree.Reach);
+    var maxX = Math.Min(x0 + size - 1, tree.X + tree.Reach);
+    var minZ = Math.Max(z0, tree.Z - tree.Reach);
+    var maxZ = Math.Min(z0 + size - 1, tree.Z + tree.Reach);
+    var trunkReach = tree.Width * 1.15f + 6f;
+    var woodTop = Math.Min(VoxelMath.ChunkHeight, tree.BaseY + tree.GiantTrunkEnd + 1);
+    var canopyReach = tree.CanopyRadius * 1.25f + 2f;
+
+    for (int wz = minZ; wz <= maxZ; wz++)
+    {
+      for (int wx = minX; wx <= maxX; wx++)
+      {
+        var dx = wx - tree.CentreX;
+        var dz = wz - tree.CentreZ;
+        var distance2 = dx * dx + dz * dz;
+
+        if (distance2 > canopyReach * canopyReach)
+        {
+          continue;
+        }
+
+        if (distance2 <= trunkReach * trunkReach)
+        {
+          for (int y = Math.Max(0, tree.BaseY); y < woodTop; y++)
+          {
+            if (tree.IsTrunk(wx, y, wz))
+            {
+              chunk.Set(wx - x0, y, wz - z0, BlockIds.Wood);
+            }
+          }
+        }
+
+        var lump = tree.CanopyLump(wx, wz);
+
+        for (int tier = 0; tier < tree.Tiers; tier++)
+        {
+          tree.TierBand(tier, out var low, out var high);
+
+          for (int y = Math.Max(0, low); y <= Math.Min(VoxelMath.ChunkHeight - 1, high); y++)
+          {
+            if (tree.IsCanopyLeaf(wx, y, wz, lump) && chunk.Get(wx - x0, y, wz - z0) == BlockIds.Air)
+            {
+              chunk.Set(wx - x0, y, wz - z0, BlockIds.Leaves);
+            }
+          }
+        }
+      }
+    }
+
+    // The foliage and vines that hang from the branches fill only air, after everything solid is in.
+    if (bucket != null)
+    {
+      foreach (var packed in bucket.Leaves)
+      {
+        var lx = packed & 31;
+        var ly = packed >> 10;
+        var lz = (packed >> 5) & 31;
+
+        if (chunk.Get(lx, ly, lz) == BlockIds.Air)
+        {
+          chunk.Set(lx, ly, lz, BlockIds.Leaves);
+        }
+      }
+    }
+  }
+
+  static void PlaceTree(ChunkData chunk, Tree tree, int x0, int z0)
+  {
+    if (tree.Kind == TreeKind.Giant)
+    {
+      PlaceGiant(chunk, tree, x0, z0);
+
+      return;
+    }
+
+    const int size = VoxelMath.ChunkSize;
     var top = Math.Min(VoxelMath.ChunkHeight, tree.BaseY + tree.TrunkHeight + tree.CanopyRadius + 1);
-    var minX = Math.Max(x0, tree.X - TreeFeature.MaxReach);
-    var maxX = Math.Min(x0 + size - 1, tree.X + TreeFeature.MaxReach);
-    var minZ = Math.Max(z0, tree.Z - TreeFeature.MaxReach);
-    var maxZ = Math.Min(z0 + size - 1, tree.Z + TreeFeature.MaxReach);
+    var minX = Math.Max(x0, tree.X - tree.Reach);
+    var maxX = Math.Min(x0 + size - 1, tree.X + tree.Reach);
+    var minZ = Math.Max(z0, tree.Z - tree.Reach);
+    var maxZ = Math.Min(z0 + size - 1, tree.Z + tree.Reach);
 
     for (int wz = minZ; wz <= maxZ; wz++)
     {

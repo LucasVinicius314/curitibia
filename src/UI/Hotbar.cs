@@ -48,9 +48,18 @@ public partial class Hotbar : HBoxContainer
       };
       panel.AddChild(icon);
 
+      // The stack size: small, bold-looking (a dark outline and a soft shadow keep it readable on any icon), in the bottom right corner of the slot.
       var count = Ui.Label("", null, HorizontalAlignment.Right);
-      count.VerticalAlignment = VerticalAlignment.Bottom;
+      count.SizeFlagsHorizontal = SizeFlags.ShrinkEnd; // a panel stretches its children, so ask for the corner explicitly
+      count.SizeFlagsVertical = SizeFlags.ShrinkEnd;
       count.MouseFilter = MouseFilterEnum.Ignore;
+      count.AddThemeFontSizeOverride("font_size", 16);
+      count.AddThemeColorOverride("font_color", new Color(0.96f, 0.97f, 1f));
+      count.AddThemeColorOverride("font_outline_color", new Color(0.03f, 0.04f, 0.07f, 0.95f));
+      count.AddThemeConstantOverride("outline_size", 5);
+      count.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 0.45f));
+      count.AddThemeConstantOverride("shadow_offset_x", 1);
+      count.AddThemeConstantOverride("shadow_offset_y", 2);
       panel.AddChild(count);
 
       panels[i] = panel;

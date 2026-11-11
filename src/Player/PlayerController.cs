@@ -227,12 +227,37 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     {
       SetNoclip(!Noclip);
     }
+    else if (@event.IsActionPressed(Actions.DropItem))
+    {
+      DropHeld(Input.IsKeyPressed(Key.Ctrl));
+    }
 
     if (@event is InputEventMouseMotion motion)
     {
       // Mouse deltas are already per-frame distances: no delta-time scaling (that would make it frame-rate dependent).
       Look(-motion.Relative.X * Tuning.MouseSensitivity * GameSettings.MouseSensitivity, -motion.Relative.Y * Tuning.MouseSensitivity * GameSettings.MouseSensitivity);
     }
+  }
+
+  /// <summary>Throws the held item (one of it, or the whole stack with Ctrl) out in front of the player; the host makes the drop.</summary>
+  void DropHeld(bool wholeStack)
+  {
+    if (Health.IsDead || DropSpawner.Instance == null)
+    {
+      return;
+    }
+
+    var held = Inventory.Get(Inventory.Selected);
+
+    if (held.IsEmpty)
+    {
+      return;
+    }
+
+    var taken = Inventory.TakeSelected(wholeStack ? held.Count : 1);
+    var direction = -CameraPivot.GlobalTransform.Basis.Z;
+
+    DropSpawner.Instance.RequestThrow(taken.ItemId, taken.Count, EyePosition + direction * 0.4f, direction);
   }
 
   void Look(float yawDelta, float pitchDelta)
@@ -509,6 +534,16 @@ public partial class PlayerController : CharacterBody3D, IDamageable
     stepCameraOffset -= rise;
 
     return true;
+  }
+
+  /// <summary>Debug: puts the player somewhere else at once (the world holds them still until the ground there exists).</summary>
+  public void TeleportTo(Vector3 position)
+  {
+    GlobalPosition = position;
+    smoother.Reset(GlobalPosition);
+    Velocity = Vector3.Zero;
+    horizontal = Vector3.Zero;
+    Publish();
   }
 
   void Respawn()

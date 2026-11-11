@@ -43,4 +43,6 @@ project/assembly_name="Curitibia"
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+environment/volumetric_fog/volume_size=96
+environment/volumetric_fog/volume_depth=96
 anti_aliasing/quality/screen_space_aa=2

@@ -22,6 +22,10 @@
     <Compile Include="../../src/World/WorldGenerator.cs" Link="Linked/WorldGenerator.cs" />
     <Compile Include="../../src/World/ChunkMesher.cs" Link="Linked/ChunkMesher.cs" />
     <Compile Include="../../src/World/Features/TreeFeature.cs" Link="Linked/TreeFeature.cs" />
+    <Compile Include="../../src/World/Features/OreFeature.cs" Link="Linked/OreFeature.cs" />
+    <Compile Include="../../src/World/Features/LogFeature.cs" Link="Linked/LogFeature.cs" />
+    <Compile Include="../../src/World/Features/GiantStructure.cs" Link="Linked/GiantStructure.cs" />
+    <Compile Include="../../src/World/BlockDamage.cs" Link="Linked/BlockDamage.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

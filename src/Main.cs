@@ -38,6 +38,8 @@ public partial class Main : Node3D
     session = NetSession.Instance;
     screenshotPath = DevArgs.Get("screenshot");
 
+    AddChild(new GroveMist { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
+    AddChild(new BlockCracks()); // the cracks of every damaged block, the host's and everyone's
     AddChild(new DayNight { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
     AddChild(new CaveLight { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
 
@@ -51,6 +53,7 @@ public partial class Main : Node3D
     session.PeerReady += SpawnPlayerFor;
     session.PeerGone += DespawnPlayerFor;
     session.PlayerPositionProvider = PlayerPosition;
+    session.HeldItemProvider = peerId => Players.GetNodeOrNull<PlayerController>(peerId.ToString())?.HeldItemId ?? 0;
 
     session.Failed += OnSessionFailed;
 
@@ -71,6 +74,7 @@ public partial class Main : Node3D
     session.PeerReady -= SpawnPlayerFor;
     session.PeerGone -= DespawnPlayerFor;
     session.PlayerPositionProvider = null;
+    session.HeldItemProvider = null;
     session.DetachWorld();
   }
 
@@ -224,7 +228,7 @@ public partial class Main : Node3D
     // Let a few frames render after the last chunk landed, then capture.
     settledFrames++;
 
-    if (settledFrames < SettleFrames)
+    if (settledFrames < SettleFrames + (DevArgs.GetInt("wait-frames") ?? 0)) // --wait-frames=N: more frames before the shot (drops, mining)
     {
       return;
     }

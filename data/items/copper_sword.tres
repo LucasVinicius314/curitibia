@@ -26,6 +26,6 @@ script = ExtResource("1")
 NetId = 1
 DisplayName = "Copper Sword"
 MaxStack = 1
-Infinite = true
+Infinite = false
 Behavior = SubResource("Resource_behavior")
 Model = SubResource("Resource_model")

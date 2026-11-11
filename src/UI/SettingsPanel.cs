@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Curitibia.Core;
+using Curitibia.Player;
 using Curitibia.World;
 using Godot;
 
@@ -29,6 +30,7 @@ public static class SettingsPanel
     ("1 - 3 or wheel", "Pick the sword or a block"),
     ("Left click", "Use the item / break a block"),
     ("Right click", "Place a block"),
+    ("Q", "Drop the held item (Ctrl: the whole stack)"),
     ("M", "World map"),
     ("Tab", "Players"),
     ("Esc", "Pause"),
@@ -180,11 +182,17 @@ public static class SettingsPanel
 
     clock.AddChild(refresh);
 
-    return
-    [
-      WithHint(cycle, "A full day lasts 10 minutes and enemies come out more at night. Off keeps it noon all the time."),
-      clock,
-    ];
+    var hint = "A full day lasts 10 minutes and enemies come out more at night. Off keeps it noon all the time.";
+
+    // The host's clock rules in a multiplayer game: the client's own cycle and time would be ignored, so they are locked.
+    if (DayNight.FollowingHost)
+    {
+      cycle.Disabled = true;
+      slider.Editable = false;
+      hint = "In this game the host sets the time of day.";
+    }
+
+    return [WithHint(cycle, hint), clock];
   }
 
   static Control[] ControlRows(bool showControls)
@@ -222,15 +230,98 @@ public static class SettingsPanel
     return rows.ToArray();
   }
 
-  static Control[] DebugRows() =>
-  [
-    Slider(
-      "Move speed",
-      "Multiplies walking, sprinting and flying speed. Not saved: back to 1x next time you start the game.",
-      GameSettings.MinMoveSpeed, GameSettings.MaxMoveSpeed, 0.25f, GameSettings.MoveSpeedMultiplier,
-      value => GameSettings.MoveSpeedMultiplier = value,
-      value => $"{value:0.00}x"),
-  ];
+  static Control[] DebugRows()
+  {
+    var rows = new List<Control>
+    {
+      Slider(
+        "Move speed",
+        "Multiplies walking, sprinting and flying speed. Not saved: back to 1x next time you start the game.",
+        GameSettings.MinMoveSpeed, GameSettings.MaxMoveSpeed, 0.25f, GameSettings.MoveSpeedMultiplier,
+        value => GameSettings.MoveSpeedMultiplier = value,
+        value => $"{value:0.00}x"),
+    };
+
+    rows.Add(Ui.Separator());
+    rows.Add(Ui.Label("Teleport to the nearest..."));
+
+    if (Terrain.Instance == null)
+    {
+      rows.Add(Ui.Paragraph("Available in a world.", Ui.Subtle));
+
+      return rows.ToArray();
+    }
+
+    var status = Ui.Paragraph("Looks outward from where you stand; far biomes can take a few seconds.", Ui.Subtle);
+    var grid = new GridContainer { Columns = 3 };
+
+    grid.AddThemeConstantOverride("h_separation", 8);
+    grid.AddThemeConstantOverride("v_separation", 8);
+
+    foreach (var biome in Biomes.All)
+    {
+      var button = Ui.Button(biome.Name);
+
+      button.CustomMinimumSize = new Vector2(0f, 32f);
+      button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+      Ui.Tint(button, RegionBanner.ColorOf(biome.Id));
+      button.Pressed += () => TeleportToNearest(biome, status);
+      grid.AddChild(button);
+    }
+
+    rows.Add(grid);
+    rows.Add(status);
+
+    return rows.ToArray();
+  }
+
+  /// <summary>Searches for the closest place of a biome on a worker thread (it can take a moment), then moves the local player there.</summary>
+  static void TeleportToNearest(BiomeDef biome, Label status)
+  {
+    var terrain = Terrain.Instance;
+    PlayerController? player = null;
+
+    foreach (var candidate in PlayerController.All)
+    {
+      if (candidate.IsLocal)
+      {
+        player = candidate;
+      }
+    }
+
+    if (terrain == null || player == null)
+    {
+      status.Text = "No player to move.";
+
+      return;
+    }
+
+    var from = player.GlobalPosition;
+
+    status.Text = $"Looking for {biome.Name}...";
+
+    System.Threading.Tasks.Task.Run(() =>
+    {
+      var found = terrain.FindNearestBiome(from, biome.Id, out var target, out var distance);
+
+      Callable.From(() =>
+      {
+        if (!found)
+        {
+          status.Text = $"No {biome.Name} within 19 km.";
+
+          return;
+        }
+
+        if (GodotObject.IsInstanceValid(player))
+        {
+          player.TeleportTo(target);
+        }
+
+        status.Text = $"Teleported to {biome.Name}, {distance / 1000f:0.0} km away.";
+      }).CallDeferred();
+    });
+  }
 
   // ------------------------------------------------------------------ widgets
 

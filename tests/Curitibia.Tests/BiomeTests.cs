@@ -179,6 +179,12 @@ public class BiomeTests
 
     for (int x = -8000; x < 8000; x++)
     {
+      // (the Titan Grove is cut by steep-walled trenches on purpose: its own test covers them)
+      if (g.BiomeAt(x - 400, 321) == BiomeId.Grove || g.BiomeAt(x, 321) == BiomeId.Grove || g.BiomeAt(x + 400, 321) == BiomeId.Grove)
+      {
+        continue;
+      }
+
       worst = Math.Max(worst, Math.Abs(g.ColumnHeight(x, 321) - g.ColumnHeight(x + 1, 321)));
     }
 

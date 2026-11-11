@@ -42,7 +42,7 @@ public partial class Inventory : Node
       return;
     }
 
-    // Everything in the catalogue, in catalogue order (a creative loadout for now).
+    // The tools, one of each (no crafting yet, so every pickaxe is here to try the power levels); blocks come from mining.
     var slot = 0;
 
     foreach (var def in ItemRegistry.All)
@@ -52,7 +52,15 @@ public partial class Inventory : Node
         break;
       }
 
-      slots[slot++] = new ItemStack(def.NetId, def.Infinite ? 1 : def.MaxStack);
+      if (def.Behavior is SwordBehavior or PickaxeBehavior)
+      {
+        slots[slot++] = new ItemStack(def.NetId, 1);
+      }
+    }
+
+    if (DevArgs.Get("give") is { } give && give.Split(',') is { Length: 2 } parts)
+    {
+      Add(int.Parse(parts[0]), int.Parse(parts[1])); // dev flag --give=itemId,count (screenshots)
     }
 
     if (DevArgs.GetInt("slot") is { } start)
@@ -72,6 +80,101 @@ public partial class Inventory : Node
   {
     slots[slot] = stack;
     Changed?.Invoke();
+  }
+
+  /// <summary>How many of an item still fit (into its stacks and the empty slots).</summary>
+  public int RoomFor(int itemId)
+  {
+    var def = ItemRegistry.Get(itemId);
+
+    if (def == null)
+    {
+      return 0;
+    }
+
+    var room = 0;
+
+    foreach (var stack in slots)
+    {
+      if (stack.IsEmpty)
+      {
+        room += def.MaxStack;
+      }
+      else if (stack.ItemId == itemId)
+      {
+        room += Math.Max(0, def.MaxStack - stack.Count);
+      }
+    }
+
+    return room;
+  }
+
+  /// <summary>Puts items into the hotbar (onto stacks of the same item first, then into empty slots) and returns how many did not fit.</summary>
+  public int Add(int itemId, int count)
+  {
+    var def = ItemRegistry.Get(itemId);
+
+    if (def == null)
+    {
+      return count;
+    }
+
+    for (int pass = 0; pass < 2 && count > 0; pass++)
+    {
+      for (int i = 0; i < HotbarSize && count > 0; i++)
+      {
+        var stack = slots[i];
+
+        if (pass == 0 ? (stack.IsEmpty || stack.ItemId != itemId) : !stack.IsEmpty)
+        {
+          continue;
+        }
+
+        var moved = Math.Min(count, def.MaxStack - (stack.IsEmpty ? 0 : stack.Count));
+
+        if (moved > 0)
+        {
+          slots[i] = new ItemStack(itemId, (stack.IsEmpty ? 0 : stack.Count) + moved);
+          count -= moved;
+        }
+      }
+    }
+
+    Changed?.Invoke();
+
+    return count;
+  }
+
+  /// <summary>Uses up some of the selected stack (not for infinite items); an emptied slot becomes empty.</summary>
+  public void ConsumeSelected(int count)
+  {
+    var stack = slots[Selected];
+
+    if (stack.IsEmpty || ItemRegistry.Get(stack.ItemId)?.Infinite == true)
+    {
+      return;
+    }
+
+    slots[Selected] = stack.Count - count > 0 ? stack with { Count = stack.Count - count } : ItemStack.Empty;
+    Changed?.Invoke();
+  }
+
+  /// <summary>Takes up to <paramref name="count"/> out of the selected slot (to drop it) and returns what was taken.</summary>
+  public ItemStack TakeSelected(int count)
+  {
+    var stack = slots[Selected];
+
+    if (stack.IsEmpty)
+    {
+      return ItemStack.Empty;
+    }
+
+    var taken = Math.Min(count, stack.Count);
+
+    slots[Selected] = stack.Count - taken > 0 ? stack with { Count = stack.Count - taken } : ItemStack.Empty;
+    Changed?.Invoke();
+
+    return new ItemStack(stack.ItemId, taken);
   }
 
   public void Select(int index)
