@@ -14,6 +14,7 @@
     <Compile Include="../../src/Core/GradientNoise.cs" Link="Linked/GradientNoise.cs" />
     <Compile Include="../../src/Enemies/VoxelPathfinder.cs" Link="Linked/VoxelPathfinder.cs" />
     <Compile Include="../../src/World/Blocks.cs" Link="Linked/Blocks.cs" />
+    <Compile Include="../../src/World/WorldProfile.cs" Link="Linked/WorldProfile.cs" />
     <Compile Include="../../src/Map/MapTileBuilder.cs" Link="Linked/MapTileBuilder.cs" />
     <Compile Include="../../src/Items/SlashSwing.cs" Link="Linked/SlashSwing.cs" />
     <Compile Include="../../src/World/Biomes.cs" Link="Linked/Biomes.cs" />

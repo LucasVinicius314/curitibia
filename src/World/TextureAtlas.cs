@@ -35,14 +35,14 @@ public static class TextureAtlas
     "res://assets/textures/void.png", // tile 20: the void, for the faces that close the meshing window (the last tile)
   };
 
-  static StandardMaterial3D? material;
+  static ShaderMaterial? material;
 
   /// <summary>UV inset per tile edge, as a fraction of the whole atlas width: a quarter texel.</summary>
   public static float UvInset => 0.25f / (TilePixels * BlockIds.TileCount);
 
   public static Material ChunkMaterial => material ??= Build();
 
-  static StandardMaterial3D Build()
+  static ShaderMaterial Build()
   {
     var atlas = Image.CreateEmpty(TilePixels * tilePaths.Length, TilePixels, false, Image.Format.Rgba8);
 
@@ -60,15 +60,38 @@ public static class TextureAtlas
       atlas.BlitRect(image, new Rect2I(0, 0, TilePixels, TilePixels), new Vector2I(i * TilePixels, 0));
     }
 
-    return new StandardMaterial3D
+    var shader = new Shader
     {
-      AlbedoTexture = ImageTexture.CreateFromImage(atlas),
-      TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-      Roughness = 1f,
-      VertexColorUseAsAlbedo = true, // the biome tints of grass and leaves (blocks that are not tinted have white vertices)
-      TextureRepeat = false,
-      Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor, // the grass tufts are cut out; every block tile is opaque
-      AlphaScissorThreshold = 0.5f,
+      // One tile of the atlas per quad, repeated across merged quads: the vertex colour's alpha is the tile index, its rgb the biome
+      // tint, the UV counts tiles. Nearest filtering and no mipmaps keep the pixel art crisp; the tufts of grass are cut out.
+      Code = @"shader_type spatial;
+render_mode cull_back, depth_draw_opaque;
+
+uniform sampler2D atlas : source_color, filter_nearest, repeat_disable;
+uniform float tile_count = 21.0;
+
+varying flat float tile;
+
+void vertex() {
+  tile = floor(COLOR.a * 255.0 + 0.5);
+}
+
+void fragment() {
+  vec2 inside = fract(UV);
+  vec4 texel = texture(atlas, vec2((tile + inside.x) / tile_count, inside.y));
+  ALBEDO = texel.rgb * COLOR.rgb;
+  ROUGHNESS = 1.0;
+  ALPHA = texel.a;
+  ALPHA_SCISSOR_THRESHOLD = 0.5;
+}
+",
     };
+
+    var material = new ShaderMaterial { Shader = shader };
+
+    material.SetShaderParameter("atlas", ImageTexture.CreateFromImage(atlas));
+    material.SetShaderParameter("tile_count", (float)tilePaths.Length);
+
+    return material;
   }
 }

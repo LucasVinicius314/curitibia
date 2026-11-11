@@ -218,7 +218,8 @@ public class ChunkMesherTests
     blocks.Set(5, 10, 5, BlockIds.Stone);
     blocks.Set(6, 10, 5, BlockIds.Stone);
 
-    Assert.Equal(10 * 2, Mesh(blocks).TriangleCount);
+    // Ten faces are visible; the four long ones (top, bottom, front, back) merge into one quad each: six quads.
+    Assert.Equal(6 * 2, Mesh(blocks).TriangleCount);
   }
 
   [Fact]

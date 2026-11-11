@@ -66,7 +66,10 @@ public sealed class GiantStructure
       return known;
     }
 
+    var started = WorldProfile.Start();
     var built = new GiantStructure(tree);
+
+    WorldProfile.Add(Phase.GiantBuild, started);
 
     if (cache.Count > CacheLimit)
     {

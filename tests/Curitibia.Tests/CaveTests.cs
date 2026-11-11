@@ -580,7 +580,27 @@ public class CaveTests
         }
       }
 
-      var visibleFaces = mesh.TriangleCount / 2 - plants * 4; // the crossed quads of short grass are not block faces
+      // The visible block faces are merged into big quads: their area is what the collision has to cover. (The crossed quads of
+      // grass plants are diagonal, not axis-aligned, so they are left out.)
+      double visibleFaces = 0;
+
+      for (int q = 0; q + 3 < mesh.VertexCount; q += 4)
+      {
+        float x0 = float.MaxValue, x1 = float.MinValue, y0 = float.MaxValue, y1 = float.MinValue, z0 = float.MaxValue, z1 = float.MinValue;
+
+        for (int k = 0; k < 4; k++)
+        {
+          x0 = Math.Min(x0, mesh.Positions[(q + k) * 3]); x1 = Math.Max(x1, mesh.Positions[(q + k) * 3]);
+          y0 = Math.Min(y0, mesh.Positions[(q + k) * 3 + 1]); y1 = Math.Max(y1, mesh.Positions[(q + k) * 3 + 1]);
+          z0 = Math.Min(z0, mesh.Positions[(q + k) * 3 + 2]); z1 = Math.Max(z1, mesh.Positions[(q + k) * 3 + 2]);
+        }
+
+        float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+
+        if (dx == 0f) visibleFaces += dy * dz;
+        else if (dy == 0f) visibleFaces += dx * dz;
+        else if (dz == 0f) visibleFaces += dx * dy;
+      }
       var triangles = mesh.CollisionTriangles;
       double area = 0;
 
@@ -601,7 +621,7 @@ public class CaveTests
 
       output.WriteLine($"chunk ({cx},{cz}): {visibleFaces * 2} visible triangles, {triangles.Length / 9} collision triangles, area {area} vs {visibleFaces} faces");
       Assert.Equal(visibleFaces, area, 3);
-      Assert.True(triangles.Length / 9 < visibleFaces * 2 / 2, "at least half the triangles are gone");
+      Assert.True(triangles.Length / 9 < mesh.TriangleCount, "the collision has fewer triangles than the visible mesh");
     }
   }
 
@@ -628,8 +648,8 @@ public class CaveTests
 
     output.WriteLine($"mesh of a slab with a shaft: {mesh.TriangleCount} triangles in {watch.ElapsedMilliseconds} ms");
 
-    // The four walls of the shaft (96 layers each) plus a cap on the floor and one on the ceiling: no hole to look through.
-    Assert.Equal(4 * 96 * 2 + 2 * 2, mesh.TriangleCount);
+    // The four walls of the shaft (96 layers each, merged into one quad each) plus a cap on the floor and one on the ceiling: no hole to look through.
+    Assert.Equal((4 + 2) * 2, mesh.TriangleCount);
 
     var floorCap = false;
     var ceilingCap = false;

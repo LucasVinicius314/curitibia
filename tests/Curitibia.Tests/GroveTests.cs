@@ -501,14 +501,20 @@ public class BiomeTintAndTeleportTests
     {
       tint[i] = 100;
       tint[i + 1] = 200;
-      tint[i + 2] = 50;
+      tint[i + 2] = 52; // (the mesher rounds tints to steps of four, so neighbouring grass columns merge)
     }
 
     var neighbours = new ChunkData?[4];
     var plain = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f);
     var tinted = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, 0f, grassTint: tint, foliageTint: tint);
 
-    Assert.Empty(plain.Colors);
+    Assert.Equal(plain.VertexCount * 4, plain.Colors.Length); // always present: the tile in the alpha channel
+
+    for (int v = 0; v < plain.VertexCount; v++)
+    {
+      Assert.Equal(255, plain.Colors[v * 4]); // and white without tints
+    }
+
     Assert.Equal(tinted.VertexCount * 4, tinted.Colors.Length);
 
     var coloured = 0;
@@ -526,12 +532,97 @@ public class BiomeTintAndTeleportTests
       {
         Assert.Equal(100, tinted.Colors[v * 4]);
         Assert.Equal(200, tinted.Colors[v * 4 + 1]);
-        Assert.Equal(50, tinted.Colors[v * 4 + 2]);
+        Assert.Equal(52, tinted.Colors[v * 4 + 2]);
         coloured++;
       }
     }
 
     Assert.Equal(48, coloured); // the grass block and the leaves block: six faces of four vertices each
     Assert.Equal(24, white); // the stone
+  }
+}
+
+public class VisualMergeTests
+{
+  [Fact]
+  public void A_flat_field_of_one_block_is_one_quad_and_the_tile_repeats_across_it()
+  {
+    var blocks = new ChunkData();
+
+    for (int x = 5; x < 13; x++)
+    {
+      for (int z = 5; z < 13; z++)
+      {
+        blocks.Set(x, 10, z, BlockIds.Stone);
+      }
+    }
+
+    var mesh = ChunkMesher.Build(blocks, new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+
+    // Top, bottom and four sides: six quads, not 64 + 64 + 32 faces.
+    Assert.Equal(6, mesh.VertexCount / 4);
+
+    // The top quad counts 8 by 8 tiles in its texture coordinates (the shader repeats the tile).
+    var found = false;
+
+    for (int v = 0; v < mesh.VertexCount && !found; v += 4)
+    {
+      if (mesh.Normals[v * 3 + 1] > 0.5f)
+      {
+        var maxU = 0f;
+        var maxV = 0f;
+
+        for (int k = 0; k < 4; k++)
+        {
+          maxU = Math.Max(maxU, mesh.Uvs[(v + k) * 2]);
+          maxV = Math.Max(maxV, mesh.Uvs[(v + k) * 2 + 1]);
+        }
+
+        Assert.Equal(8f, maxU);
+        Assert.Equal(8f, maxV);
+        Assert.Equal(BlockIds.TileByBlock[BlockIds.Stone], mesh.Colors[v * 4 + 3]); // the tile index rides in the alpha
+        found = true;
+      }
+    }
+
+    Assert.True(found);
+  }
+
+  [Fact]
+  public void Faces_with_a_different_tile_or_tint_are_not_merged()
+  {
+    var blocks = new ChunkData();
+
+    for (int x = 5; x < 11; x++)
+    {
+      blocks.Set(x, 10, 7, x < 8 ? BlockIds.Stone : BlockIds.Dirt); // two kinds of block side by side
+    }
+
+    var mixed = ChunkMesher.Build(blocks, new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f);
+
+    // Each face direction has two runs (three stones, three dirt), except the two ends: top, bottom, front, back = 8, plus 2 ends.
+    Assert.Equal(10, mixed.VertexCount / 4);
+
+    // The same row of grass with a tint that changes along it (steps of 8, past the rounding): two runs again.
+    var grass = new ChunkData();
+
+    for (int x = 5; x < 11; x++)
+    {
+      grass.Set(x, 10, 7, BlockIds.Grass);
+    }
+
+    var tint = new byte[32 * 32 * 3];
+
+    for (int i = 0; i < 32; i++)
+    {
+      for (int c = 0; c < 3; c++)
+      {
+        tint[(i + 7 * 32) * 3 + c] = (byte)(i < 8 ? 100 : 140); // columns 5, 6, 7 one tint, 8, 9, 10 another
+      }
+    }
+
+    var tinted = ChunkMesher.Build(grass, new ChunkData?[4], BlockIds.TileByBlock, BlockIds.TileCount, 0f, grassTint: tint, foliageTint: tint);
+
+    Assert.Equal(10, tinted.VertexCount / 4);
   }
 }

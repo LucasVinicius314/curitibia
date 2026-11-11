@@ -80,77 +80,48 @@ public static class ChunkMesher
   /// <param name="collision">Also build the merged collision rectangles (<see cref="MeshData.CollisionTriangles"/>).</param>
   /// <param name="grassTint">RGB bytes (three per column, index x + z * 32) that multiply the colour of grass blocks and grass plants of this chunk (null = no tint).</param>
   /// <param name="foliageTint">The same for leaves.</param>
+  /// <param name="groundHeights">The natural ground height of each column of this chunk (index x + z * 32). With it, leaves higher than <paramref name="canopyCollisionHeight"/> voxels above the ground add nothing to the collision (nobody can stand in a giant's canopy, and its triangles cost a lot to build); null = every solid face collides.</param>
   /// <param name="ceilingLayer">Only layers below this are meshed (a multiple of the section height, or the world height for no cut).</param>
-  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true, int chunkX = 0, int chunkZ = 0, byte[]? grassTint = null, byte[]? foliageTint = null)
+  public static MeshData Build(ChunkData blocks, ChunkData?[] neighbours, int[] tileByBlock, int tileCount, float uvInset, int[]? topTiles = null, int[]? bottomTiles = null, int floorLayer = 0, int ceilingLayer = VoxelMath.ChunkHeight, bool collision = true, int chunkX = 0, int chunkZ = 0, byte[]? grassTint = null, byte[]? foliageTint = null, int[]? groundHeights = null, int canopyCollisionHeight = 26, bool canopyWoodCollision = true)
   {
     var positions = new List<float>(4096);
     var normals = new List<float>(4096);
     var uvs = new List<float>(4096);
     var indices = new List<int>(4096);
-    var colors = grassTint != null || foliageTint != null ? new List<byte>(4096) : null;
+    var colors = new List<byte>(4096);
+    var visualKeys = new List<long>[Faces.Length];
+    var visualAttributes = new List<int>[Faces.Length];
 
-    // The tint of a block in a column of this chunk (white for anything that is not grass or leaves).
-    void AddColor(byte id, int x, int z)
+    for (int i = 0; i < visualKeys.Length; i++)
     {
-      if (colors == null)
-      {
-        return;
-      }
+      visualKeys[i] = new List<long>();
+      visualAttributes[i] = new List<int>();
+    }
 
+    // What makes two faces mergeable into one quad: the tile and the tint (quantised to steps of four, so a slowly changing tint
+    // does not break a run of grass into single columns). The tile index travels in the alpha channel of the vertex colour, the
+    // tint in its rgb; the shader repeats the tile across the merged quad.
+    int VisualAttribute(byte id, int x, int z, int tile)
+    {
       var tint = id is BlockIds.Grass or BlockIds.ShortGrass or BlockIds.TallGrass ? grassTint
         : id is BlockIds.Leaves or BlockIds.PineLeaves or BlockIds.BirchLeaves ? foliageTint
         : null;
 
       if (tint == null)
       {
-        colors.Add(255); colors.Add(255); colors.Add(255); colors.Add(255);
-
-        return;
+        return tile | (255 << 8) | (255 << 16) | (255 << 24);
       }
 
       var i = (x + z * VoxelMath.ChunkSize) * 3;
 
-      colors.Add(tint[i]); colors.Add(tint[i + 1]); colors.Add(tint[i + 2]); colors.Add(255);
+      return tile | (Quantise(tint[i]) << 8) | (Quantise(tint[i + 1]) << 16) | (Quantise(tint[i + 2]) << 24);
     }
 
-    void AddFace(int x, int y, int z, int f, int faceTile, byte id = 0)
+    void AddTuftColor(byte plant, int x, int z)
     {
-      var face = Faces[f];
-      var u0 = (float)faceTile / tileCount + uvInset;
-      var u1 = (float)(faceTile + 1) / tileCount - uvInset;
+      var attribute = VisualAttribute(plant, x, z, BlockIds.TuftTile);
 
-      var baseVertex = positions.Count / 3;
-
-      foreach (var (a, b) in Corners)
-      {
-        positions.Add(x + face.Ox + a * face.Ux + b * face.Vx);
-        positions.Add(y + face.Oy + a * face.Uy + b * face.Vy);
-        positions.Add(z + face.Oz + a * face.Uz + b * face.Vz);
-
-        normals.Add(face.Nx);
-        normals.Add(face.Ny);
-        normals.Add(face.Nz);
-
-        var s = face.SFromB ? b : a;
-        var t = face.SFromB ? a : b;
-
-        if (face.FlipT)
-        {
-          t = 1 - t;
-        }
-
-        uvs.Add(u0 + s * (u1 - u0));
-        uvs.Add(t);
-        AddColor(id, x, z);
-      }
-
-      // clockwise triangles
-      indices.Add(baseVertex);
-      indices.Add(baseVertex + 2);
-      indices.Add(baseVertex + 1);
-      indices.Add(baseVertex);
-      indices.Add(baseVertex + 3);
-      indices.Add(baseVertex + 2);
+      colors.Add((byte)(attribute >> 8)); colors.Add((byte)(attribute >> 16)); colors.Add((byte)(attribute >> 24)); colors.Add((byte)BlockIds.TuftTile);
     }
 
     void AddTuft(int x, int y, int z, int wx, int wz, bool tall)
@@ -160,8 +131,6 @@ public static class ChunkMesher
       var cx = x + 0.2f + (h & 0xff) / 255f * 0.6f;
       var cz = z + 0.2f + ((h >> 8) & 0xff) / 255f * 0.6f;
       var height = (0.55f + ((h >> 16) & 0xff) / 255f * 0.4f) * (tall ? 2.6f : 1f);
-      var u0 = (float)BlockIds.TuftTile / tileCount + uvInset;
-      var u1 = (float)(BlockIds.TuftTile + 1) / tileCount - uvInset;
 
       // Two crossed vertical quads (the diagonals of the voxel), each drawn from both sides; the normal points up so they are
       // lit like the ground they stand on.
@@ -186,8 +155,8 @@ public static class ChunkMesher
           {
             positions.Add(vx); positions.Add(vy); positions.Add(vz);
             normals.Add(0f); normals.Add(1f); normals.Add(0f);
-            uvs.Add(u0 + s * (u1 - u0)); uvs.Add(t);
-            AddColor(plant, x, z);
+            uvs.Add(s); uvs.Add(t);
+            AddTuftColor(plant, x, z);
           }
 
           Vertex(ax, y, az, 0f, 1f);
@@ -275,9 +244,11 @@ public static class ChunkMesher
               faceTile = bottomTiles[id];
             }
 
-            AddFace(x, y, z, f, faceTile, id);
+            visualKeys[f].Add(FaceKey(f, x, y, z));
+            visualAttributes[f].Add(VisualAttribute(id, x, z, faceTile));
 
-            if (collision)
+            if (collision && !(groundHeights != null && y > groundHeights[x + z * size] + canopyCollisionHeight
+              && (id is BlockIds.Leaves or BlockIds.PineLeaves or BlockIds.BirchLeaves || (!canopyWoodCollision && id is BlockIds.Wood or BlockIds.BirchWood))))
             {
               faceKeys[f].Add(FaceKey(f, x, y, z));
             }
@@ -301,23 +272,27 @@ public static class ChunkMesher
         {
           if (floorLayer > 0 && floorLayer < top && blocks.Get(x, floorLayer, z) == BlockIds.Air)
           {
-            AddFace(x, floorLayer - 1, z, 2, voidTile); // the top of the rock below the cut
+            visualKeys[2].Add(FaceKey(2, x, floorLayer - 1, z)); // the top of the rock below the cut
+            visualAttributes[2].Add(voidTile | (255 << 8) | (255 << 16) | (255 << 24));
           }
 
           if (ceilingLayer < VoxelMath.ChunkHeight && ceilingLayer > floorLayer && blocks.Get(x, ceilingLayer - 1, z) == BlockIds.Air)
           {
-            AddFace(x, ceilingLayer, z, 3, voidTile); // the underside of the rock above the cut
+            visualKeys[3].Add(FaceKey(3, x, ceilingLayer, z)); // the underside of the rock above the cut
+            visualAttributes[3].Add(voidTile | (255 << 8) | (255 << 16) | (255 << 24));
           }
         }
       }
     }
+
+    MergeVisual(visualKeys, visualAttributes, positions, normals, uvs, colors, indices);
 
     return new MeshData
     {
       Positions = positions.ToArray(),
       Normals = normals.ToArray(),
       Uvs = uvs.ToArray(),
-      Colors = colors?.ToArray() ?? Array.Empty<byte>(),
+      Colors = colors.ToArray(),
       Indices = indices.ToArray(),
       CollisionTriangles = collisionTriangles,
     };
@@ -440,6 +415,161 @@ public static class ChunkMesher
     }
 
     return output.ToArray();
+  }
+
+  static int Quantise(byte channel) => Math.Min(255, (channel + 2) & ~3);
+
+  [ThreadStatic] static int[]? visualGrid;
+  [ThreadStatic] static bool[]? visualUsed;
+
+  /// <summary>
+  /// Greedy-merges the visible faces of each plane into big quads: neighbouring faces with the same tile and tint become one rectangle
+  /// whose texture coordinates run from 0 to its size in tiles (the shader repeats the tile), so a flat field of grass or the top of a
+  /// canopy is a handful of quads instead of one per block.
+  /// </summary>
+  static void MergeVisual(List<long>[] faceKeys, List<int>[] faceAttributes, List<float> positions, List<float> normals, List<float> uvs, List<byte> colors, List<int> indices)
+  {
+    const int rowWidth = VoxelMath.ChunkHeight;
+    var attributes = visualGrid ??= new int[rowWidth * rowWidth];
+    var used = visualUsed ??= new bool[rowWidth * rowWidth];
+
+    for (int f = 0; f < faceKeys.Length; f++)
+    {
+      if (faceKeys[f].Count == 0)
+      {
+        continue;
+      }
+
+      // Sorted by plane, then row, then column (the attributes follow their keys); sorting two plain arrays is far cheaper than
+      // sorting a list of pairs with a comparison delegate.
+      var keys = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(faceKeys[f]);
+      var items = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(faceAttributes[f]);
+
+      keys.Sort(items);
+
+      var start = 0;
+
+      while (start < keys.Length)
+      {
+        var slice = (int)(keys[start] >> 40);
+        var end = start;
+        int uMin = int.MaxValue, uMax = 0, vMin = int.MaxValue, vMax = 0;
+
+        while (end < keys.Length && (int)(keys[end] >> 40) == slice)
+        {
+          var u = (int)(keys[end] & 0xfffff);
+          var v = (int)((keys[end] >> 20) & 0xfffff);
+
+          attributes[v * rowWidth + u] = items[end];
+          used[v * rowWidth + u] = true;
+          uMin = Math.Min(uMin, u);
+          uMax = Math.Max(uMax, u);
+          vMin = Math.Min(vMin, v);
+          vMax = Math.Max(vMax, v);
+          end++;
+        }
+
+        for (int v = vMin; v <= vMax; v++)
+        {
+          for (int u = uMin; u <= uMax; u++)
+          {
+            var at = v * rowWidth + u;
+
+            if (!used[at])
+            {
+              continue;
+            }
+
+            var attribute = attributes[at];
+            var w = 1;
+
+            while (u + w <= uMax && used[at + w] && attributes[at + w] == attribute)
+            {
+              w++;
+            }
+
+            var h = 1;
+
+            while (v + h <= vMax && RowMatches(attributes, used, (v + h) * rowWidth + u, w, attribute))
+            {
+              h++;
+            }
+
+            for (int dv = 0; dv < h; dv++)
+            {
+              Array.Clear(used, (v + dv) * rowWidth + u, w);
+            }
+
+            EmitVisualQuad(positions, normals, uvs, colors, indices, f, slice, u, v, w, h, attribute);
+          }
+        }
+
+        start = end;
+      }
+    }
+  }
+
+  static bool RowMatches(int[] attributes, bool[] used, int from, int width, int attribute)
+  {
+    for (int i = 0; i < width; i++)
+    {
+      if (!used[from + i] || attributes[from + i] != attribute)
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  static void EmitVisualQuad(List<float> positions, List<float> normals, List<float> uvs, List<byte> colors, List<int> indices, int f, int slice, int u, int v, int w, int h, int attribute)
+  {
+    var face = Faces[f];
+    Span<float> origin = stackalloc float[3];
+
+    origin[NormalAxis[f]] = slice + (NormalAxis[f] == 0 ? face.Ox : NormalAxis[f] == 1 ? face.Oy : face.Oz);
+    origin[UAxis[f]] = u;
+    origin[VAxis[f]] = v;
+
+    var baseVertex = positions.Count / 3;
+    var tile = (byte)(attribute & 0xff);
+
+    foreach (var (a, b) in Corners)
+    {
+      for (int axis = 0; axis < 3; axis++)
+      {
+        positions.Add(origin[axis] + (UAxis[f] == axis ? a * w : 0) + (VAxis[f] == axis ? b * h : 0));
+      }
+
+      normals.Add(face.Nx);
+      normals.Add(face.Ny);
+      normals.Add(face.Nz);
+
+      // Texture coordinates in tiles: they run 0 to w and 0 to h (or the other way round for the faces whose texture is turned).
+      float s = face.SFromB ? b * h : a * w;
+      float t = face.SFromB ? a * w : b * h;
+
+      if (face.FlipT)
+      {
+        t = (face.SFromB ? w : h) - t;
+      }
+
+      uvs.Add(s);
+      uvs.Add(t);
+
+      colors.Add((byte)(attribute >> 8));
+      colors.Add((byte)(attribute >> 16));
+      colors.Add((byte)(attribute >> 24));
+      colors.Add(tile);
+    }
+
+    // clockwise triangles
+    indices.Add(baseVertex);
+    indices.Add(baseVertex + 2);
+    indices.Add(baseVertex + 1);
+    indices.Add(baseVertex);
+    indices.Add(baseVertex + 3);
+    indices.Add(baseVertex + 2);
   }
 
   static bool RowIsSolid(bool[] cells, int from, int width)

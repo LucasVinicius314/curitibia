@@ -52,6 +52,16 @@ public partial class BlockItemModel : ItemModel
     arrays[(int)Mesh.ArrayType.Vertex] = vertices;
     arrays[(int)Mesh.ArrayType.Normal] = MemoryMarshal.Cast<float, Vector3>(data.Normals).ToArray();
     arrays[(int)Mesh.ArrayType.TexUV] = MemoryMarshal.Cast<float, Vector2>(data.Uvs).ToArray();
+
+    // The vertex colour carries the tile index (alpha) and the tint (rgb) that the chunk shader reads.
+    var colors = new Color[data.Colors.Length / 4];
+
+    for (int i = 0; i < colors.Length; i++)
+    {
+      colors[i] = new Color(data.Colors[i * 4] / 255f, data.Colors[i * 4 + 1] / 255f, data.Colors[i * 4 + 2] / 255f, data.Colors[i * 4 + 3] / 255f);
+    }
+
+    arrays[(int)Mesh.ArrayType.Color] = colors;
     arrays[(int)Mesh.ArrayType.Index] = data.Indices;
 
     var mesh = new ArrayMesh();

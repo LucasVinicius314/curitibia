@@ -523,7 +523,10 @@ public partial class Terrain : Node3D
       return;
     }
 
+    var drainStart = WorldProfile.Start();
+
     DrainDataResults();
+    WorldProfile.Add(Phase.DrainData, drainStart);
     DrainMeshResults();
 
     if (Damage.Count > 0)
@@ -570,7 +573,11 @@ public partial class Terrain : Node3D
     }
 
     dirty = false;
+
+    var planStart = WorldProfile.Start();
+
     Plan(chunks, sections, under);
+    WorldProfile.Add(Phase.Plan, planStart);
   }
 
   static bool SameChunks(Vector2I[] a, Vector2I[] b)
@@ -835,13 +842,26 @@ public partial class Terrain : Node3D
 
     Task.Run(() =>
     {
+      var tintStart = WorldProfile.Start();
       var grassTint = new byte[VoxelMath.ChunkSize * VoxelMath.ChunkSize * 3];
       var foliageTint = new byte[grassTint.Length];
 
       generator!.ColumnTints(entry.Coord.X, entry.Coord.Y, grassTint, foliageTint);
 
-      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide, chunkX: entry.Coord.X, chunkZ: entry.Coord.Y, grassTint: grassTint, foliageTint: foliageTint);
-      meshResults.Enqueue(new MeshResult { Entry = entry, Version = version, Floor = floor, Ceiling = ceiling, Collision = collide, Build = ChunkBuild.From(data, collide) });
+      var grounds = new int[VoxelMath.ChunkSize * VoxelMath.ChunkSize];
+
+      generator.ColumnHeights(entry.Coord.X, entry.Coord.Y, grounds);
+      WorldProfile.Add(Phase.Tints, tintStart);
+
+      var meshStart = WorldProfile.Start();
+      var data = ChunkMesher.Build(blocks, neighbours, BlockIds.TileByBlock, BlockIds.TileCount, TextureAtlas.UvInset, floorLayer: floor, ceilingLayer: ceiling, collision: collide, chunkX: entry.Coord.X, chunkZ: entry.Coord.Y, grassTint: grassTint, foliageTint: foliageTint, groundHeights: grounds, canopyWoodCollision: !DevArgs.Has("no-canopy-wood-collision"));
+      WorldProfile.Add(Phase.Mesh, meshStart);
+
+      var convertStart = WorldProfile.Start();
+      var build = ChunkBuild.From(data, collide);
+
+      WorldProfile.Add(Phase.MeshConvert, convertStart);
+      meshResults.Enqueue(new MeshResult { Entry = entry, Version = version, Floor = floor, Ceiling = ceiling, Collision = collide, Build = build });
     });
   }
 
@@ -875,25 +895,31 @@ public partial class Terrain : Node3D
     }
   }
 
+  /// <summary>
+  /// A finished mesh waiting to be put into its chunk, a step at a time. Uploading a mesh and building its collision happen on this
+  /// thread and were the main cost of walking through new ground (one 20 to 50 ms stall per chunk): now each frame does as many
+  /// steps (a slice of a few thousand quads, or the collision shape) as fit in ApplyBudgetMs, always at least one.
+  /// </summary>
+  sealed class ApplyJob
+  {
+    public MeshResult Result = null!;
+    public ChunkApply Apply = null!;
+  }
+
+  readonly Queue<ApplyJob> applyQueue = new();
+
   void DrainMeshResults()
   {
-    var applied = 0;
-    var started = System.Diagnostics.Stopwatch.GetTimestamp();
-
-    // Uploading a mesh and building its collision happen on this thread and are the main cost of walking through new ground:
-    // take finished meshes until the frame's budget is spent (the cap is a safety net).
-    while (applied < Settings.MeshAppliesPerFrame * 4
-      && (applied == 0 || System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds < ApplyBudgetMs)
-      && meshResults.TryDequeue(out var result))
+    while (meshResults.TryDequeue(out var result))
     {
       inFlight--;
-      applied++;
 
       var entry = result.Entry;
-      entry.Meshing = false;
 
       if (entry.Removed)
       {
+        entry.Meshing = false;
+
         continue;
       }
 
@@ -904,11 +930,43 @@ public partial class Terrain : Node3D
         AddChild(entry.Node);
       }
 
-      entry.Node.Apply(result.Build);
-      entry.MeshedVersion = result.Version;
-      entry.MeshedFloor = result.Floor;
-      entry.MeshedCeiling = result.Ceiling;
-      entry.MeshedCollision = result.Collision;
+      applyQueue.Enqueue(new ApplyJob { Result = result, Apply = new ChunkApply(entry.Node, result.Build) });
+    }
+
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+    var steps = 0;
+
+    while (applyQueue.Count > 0 && (steps == 0 || System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds < ApplyBudgetMs))
+    {
+      var job = applyQueue.Peek();
+      var entry = job.Result.Entry;
+
+      if (entry.Removed || entry.Node == null || !IsInstanceValid(entry.Node))
+      {
+        applyQueue.Dequeue();
+        job.Apply.Abandon();
+        entry.Meshing = false;
+
+        continue;
+      }
+
+      var stepStart = WorldProfile.Start();
+      var done = job.Apply.Step();
+
+      WorldProfile.Add(Phase.Apply, stepStart);
+      steps++;
+
+      if (!done)
+      {
+        continue;
+      }
+
+      applyQueue.Dequeue();
+      entry.Meshing = false;
+      entry.MeshedVersion = job.Result.Version;
+      entry.MeshedFloor = job.Result.Floor;
+      entry.MeshedCeiling = job.Result.Ceiling;
+      entry.MeshedCollision = job.Result.Collision;
       dirty = true;
     }
   }

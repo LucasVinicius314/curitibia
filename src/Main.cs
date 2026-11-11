@@ -38,6 +38,11 @@ public partial class Main : Node3D
     session = NetSession.Instance;
     screenshotPath = DevArgs.Get("screenshot");
 
+    if (DevArgs.Has("bench"))
+    {
+      AddChild(new PerfBench());
+    }
+
     AddChild(new GroveMist { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
     AddChild(new BlockCracks()); // the cracks of every damaged block, the host's and everyone's
     AddChild(new DayNight { Sun = GetNode<DirectionalLight3D>("Sun"), Environment = GetNode<WorldEnvironment>("WorldEnvironment") });
@@ -138,7 +143,7 @@ public partial class Main : Node3D
     PlayerSpawner.Spawn(new Godot.Collections.Dictionary
     {
       ["peer"] = peerId,
-      ["pos"] = PlayerController.SpawnPoint(slot * 4, 0),
+      ["pos"] = DevArgs.Get("spawn-at") is { } at ? PlayerController.SpawnPoint(int.Parse(at.Split(',')[0]), int.Parse(at.Split(',')[1])) : PlayerController.SpawnPoint(slot * 4, 0),
     });
   }
 

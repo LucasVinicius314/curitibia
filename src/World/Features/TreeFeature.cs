@@ -225,6 +225,50 @@ public readonly record struct Tree(int X, int Z, int BaseY, int TrunkHeight, int
     return IsCanopyLeaf(x, y, z, CanopyLump(x, z));
   }
 
+  /// <summary>
+  /// Whether a column at squared horizontal distance <paramref name="d2"/> from the middle of the trunk meets a disc of leaves at all,
+  /// and the layers (low to high) where it can: a disc is thick in the middle and thin at its edge. Lets the placer skip every column
+  /// a disc does not reach and every layer it does not fill.
+  /// </summary>
+  public bool CanopyBand(int tier, float lump, float d2, out int low, out int high)
+  {
+    var radius = CanopyRadius * TierScale[tier] * (1f + 0.17f * lump);
+    var fraction = 1.13f - d2 / (radius * radius); // 1.13: the ragged edge reaches 13% past the outline
+
+    low = 0;
+    high = -1;
+
+    if (fraction <= 0f)
+    {
+      return false;
+    }
+
+    var half = LeafThickness(radius) * MathF.Sqrt(fraction);
+    var centre = BaseY + TrunkHeight * TierHeight[tier];
+
+    low = (int)MathF.Floor(centre - half);
+    high = (int)MathF.Ceiling(centre + half);
+
+    return true;
+  }
+
+  /// <summary>Whether one voxel is leaf in one disc (see <see cref="CanopyBand"/> for the columns and layers worth asking about).</summary>
+  public bool IsLeafInTier(int tier, int x, int y, int z, float lump, float d2)
+  {
+    var radius = CanopyRadius * TierScale[tier] * (1f + 0.17f * lump);
+    var thickness = LeafThickness(radius);
+    var dy = y - (BaseY + TrunkHeight * TierHeight[tier]);
+
+    if (Math.Abs(dy) > thickness)
+    {
+      return false;
+    }
+
+    var edge = 1f + 0.26f * (Scatter(x, y, z) - 0.5f);
+
+    return d2 / (radius * radius) + dy * dy / (thickness * thickness) <= edge && Scatter(x * 3 + 1, y, z * 3 + 2) > 0.012f;
+  }
+
   /// <summary>Whether a voxel is in one of the discs of leaves; <paramref name="lump"/> is <see cref="CanopyLump"/> of its column (computed once per column by the placer).</summary>
   public bool IsCanopyLeaf(int x, int y, int z, float lump)
   {
@@ -362,6 +406,12 @@ public sealed class TreeFeature
   readonly Func<int, int, bool>? groundOpen;
   readonly Func<int, int, float>? giantDensity;
 
+  // Every chunk within reach asks about the same cells: the answers never change, so they are kept.
+  readonly System.Collections.Concurrent.ConcurrentDictionary<long, (bool found, Tree tree)> giantCache = new();
+  readonly System.Collections.Concurrent.ConcurrentDictionary<long, (bool found, int x, int z, uint priority)> candidateCache = new();
+
+  static long CellKey(int cellX, int cellZ) => ((long)cellX << 32) ^ (uint)cellZ;
+
   /// <param name="groundHeight">Terrain height (voxels in the column) at a world column.</param>
   /// <param name="density">Chance 0 to 1 of a tree in a cell, by the world column picked for it (null = a fixed 0.3).</param>
   /// <param name="kindAt">Which kind of tree grows at a world column (null = oak everywhere).</param>
@@ -496,6 +546,31 @@ public sealed class TreeFeature
   /// <summary>Where a giant cell would put a giant, and its priority, if the biome and the density allow one (before the ground is checked).</summary>
   bool GiantCandidate(int cellX, int cellZ, out int x, out int z, out uint priority)
   {
+    var key = CellKey(cellX, cellZ);
+
+    if (!candidateCache.TryGetValue(key, out var known))
+    {
+      var found = ComputeGiantCandidate(cellX, cellZ, out var cx, out var cz, out var cp);
+
+      known = (found, cx, cz, cp);
+
+      if (candidateCache.Count > 200000)
+      {
+        candidateCache.Clear();
+      }
+
+      candidateCache[key] = known;
+    }
+
+    x = known.x;
+    z = known.z;
+    priority = known.priority;
+
+    return known.found;
+  }
+
+  bool ComputeGiantCandidate(int cellX, int cellZ, out int x, out int z, out uint priority)
+  {
     var h = Hash(cellX, cellZ, 31);
     var span = GiantCell - 2 * 4;
 
@@ -522,6 +597,31 @@ public sealed class TreeFeature
     {
       return false;
     }
+
+    var key = CellKey(cellX, cellZ);
+
+    if (!giantCache.TryGetValue(key, out var known))
+    {
+      var found = ComputeGiant(cellX, cellZ, out var computed);
+
+      known = (found, computed);
+
+      if (giantCache.Count > 100000)
+      {
+        giantCache.Clear();
+      }
+
+      giantCache[key] = known;
+    }
+
+    tree = known.tree;
+
+    return known.found;
+  }
+
+  bool ComputeGiant(int cellX, int cellZ, out Tree tree)
+  {
+    tree = default;
 
     var variation = Hash(cellX, cellZ, 32);
 

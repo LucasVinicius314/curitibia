@@ -244,6 +244,20 @@ public sealed class WorldGenerator
     }
   }
 
+  /// <summary>The natural ground height of every column of a chunk (index x + z * 32).</summary>
+  public void ColumnHeights(int chunkX, int chunkZ, int[] heights)
+  {
+    const int size = VoxelMath.ChunkSize;
+
+    for (int z = 0; z < size; z++)
+    {
+      for (int x = 0; x < size; x++)
+      {
+        heights[x + z * size] = Column(chunkX * size + x, chunkZ * size + z).Height;
+      }
+    }
+  }
+
   static byte Channel(float multiplier) => (byte)Math.Clamp((int)(multiplier * 255f + 0.5f), 0, 255);
 
   /// <summary>
@@ -512,6 +526,8 @@ public sealed class WorldGenerator
     const int size = VoxelMath.ChunkSize;
     var x0 = cx * size;
     var z0 = cz * size;
+    var whole = WorldProfile.Start();
+    var started = whole;
 
     var columns = new ColumnInfo[size * size];
     var heights = new int[size * size];
@@ -530,6 +546,9 @@ public sealed class WorldGenerator
       }
     }
 
+    WorldProfile.Add(Phase.Columns, started);
+    started = WorldProfile.Start();
+
     var chunk = new ChunkData { SurfaceMin = lowest };
 
     // Every section that lies wholly below the lowest surface is plain rock: no array, just the block.
@@ -546,15 +565,50 @@ public sealed class WorldGenerator
     var bandLow = Underground.HellTop - Underground.BlendBand;
     var bandHigh = Underground.HellTop + Underground.BlendBand;
 
-    for (int y = bandLow; y < bandHigh && y < rockSections * ChunkData.SectionHeight; y++)
-    {
-      for (int z = 0; z < size; z++)
-      {
-        for (int x = 0; x < size; x++)
-        {
-          var wobble = rockNoise.Sample((x0 + x) * 0.06f, y * 0.09f, (z0 + z) * 0.06f) / 0.7f * 0.45f;
+    var bandTop = Math.Min(bandHigh, rockSections * ChunkData.SectionHeight);
 
-          chunk.Set(x, y, z, Underground.DepthBlend(y) + wobble > 0.5f ? BlockIds.Hellrock : BlockIds.Stone);
+    if (bandTop > bandLow)
+    {
+      // The patchy noise changes over about a dozen voxels, so it is measured on a lattice every 4 voxels and blended between, which
+      // costs a fiftieth of sampling every voxel (it was the whole cost of filling a surface chunk's rock).
+      const int step = 4;
+      const int lattice = size / step + 1;
+      var levels = (bandTop - bandLow) / step + 2;
+      var wobbles = new float[lattice * lattice * levels];
+
+      for (int ly = 0; ly < levels; ly++)
+      {
+        for (int lz = 0; lz < lattice; lz++)
+        {
+          for (int lx = 0; lx < lattice; lx++)
+          {
+            wobbles[(ly * lattice + lz) * lattice + lx] =
+              rockNoise.Sample((x0 + lx * step) * 0.06f, (bandLow + ly * step) * 0.09f, (z0 + lz * step) * 0.06f) / 0.7f * 0.45f;
+          }
+        }
+      }
+
+      for (int y = bandLow; y < bandTop; y++)
+      {
+        var ly = (y - bandLow) / step;
+        var fy = (y - bandLow) % step / (float)step;
+        var blend = Underground.DepthBlend(y);
+
+        for (int z = 0; z < size; z++)
+        {
+          var lz = z / step;
+          var fz = z % step / (float)step;
+
+          for (int x = 0; x < size; x++)
+          {
+            var lx = x / step;
+            var fx = x % step / (float)step;
+            var at = (ly * lattice + lz) * lattice + lx;
+            var down = Bilinear(wobbles, at, at + 1, at + lattice, at + lattice + 1, fx, fz);
+            var up = Bilinear(wobbles, at + lattice * lattice, at + lattice * lattice + 1, at + lattice * lattice + lattice, at + lattice * lattice + lattice + 1, fx, fz);
+
+            chunk.Set(x, y, z, blend + (down + (up - down) * fy) > 0.5f ? BlockIds.Hellrock : BlockIds.Stone);
+          }
         }
       }
     }
@@ -580,21 +634,47 @@ public sealed class WorldGenerator
       }
     }
 
+    WorldProfile.Add(Phase.Fill, started);
+    started = WorldProfile.Start();
+
     caves.Carve(chunk, x0, z0, heights, tallest);
+
+    WorldProfile.Add(Phase.Caves, started);
+    started = WorldProfile.Start();
 
     // Trees rooted in this chunk or close enough to reach into it, written only where they fall inside. Wood always wins
     // and leaves only fill air, so the result does not depend on the order neighbouring chunks visit overlapping trees.
     trees.ForTreesNear(x0, z0, x0 + size - 1, z0 + size - 1, tree => PlaceTree(chunk, tree, x0, z0));
+    WorldProfile.Add(Phase.Trees, started);
+    started = WorldProfile.Start();
+
     trees.ForGiantsNear(x0, z0, x0 + size - 1, z0 + size - 1, tree => PlaceTree(chunk, tree, x0, z0));
+    WorldProfile.Add(Phase.Giants, started);
+    started = WorldProfile.Start();
+
     logs.ForLogsNear(x0, z0, x0 + size - 1, z0 + size - 1, log => PlaceLog(chunk, log, x0, z0));
+    WorldProfile.Add(Phase.Logs, started);
+    started = WorldProfile.Start();
 
     Features.OreFeature.Place(chunk, p.Seed, cx, cz, tallest - 1);
+    WorldProfile.Add(Phase.Ores, started);
+    started = WorldProfile.Start();
 
     PlacePlants(chunk, x0, z0, columns);
 
     chunk.Compact();
+    WorldProfile.Add(Phase.Plants, started);
+    WorldProfile.Add(Phase.Generate, whole);
 
     return chunk;
+  }
+
+  static float Bilinear(float[] v, int i00, int i10, int i01, int i11, float fx, float fz)
+  {
+    var a = v[i00] + (v[i10] - v[i00]) * fx;
+    var b = v[i01] + (v[i11] - v[i01]) * fx;
+
+    return a + (b - a) * fz;
   }
 
   /// <summary>Out of 256: how many open grass tops carry a blade of short grass.</summary>
@@ -713,11 +793,15 @@ public sealed class WorldGenerator
 
         for (int tier = 0; tier < tree.Tiers; tier++)
         {
-          tree.TierBand(tier, out var low, out var high);
+          // The upper discs are smaller: most columns are outside them, and the layers a disc fills shrink toward its edge.
+          if (!tree.CanopyBand(tier, lump, distance2, out var low, out var high))
+          {
+            continue;
+          }
 
           for (int y = Math.Max(0, low); y <= Math.Min(VoxelMath.ChunkHeight - 1, high); y++)
           {
-            if (tree.IsCanopyLeaf(wx, y, wz, lump) && chunk.Get(wx - x0, y, wz - z0) == BlockIds.Air)
+            if (tree.IsLeafInTier(tier, wx, y, wz, lump, distance2) && chunk.Get(wx - x0, y, wz - z0) == BlockIds.Air)
             {
               chunk.Set(wx - x0, y, wz - z0, BlockIds.Leaves);
             }
